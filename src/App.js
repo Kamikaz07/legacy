@@ -8,9 +8,11 @@ import {
   Box,
   Typography,
   Card,
-  CardContent,
-  Grid,
-  Divider,
+  IconButton,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Button,
 } from '@mui/material';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -21,27 +23,37 @@ import Mixer from './components/Mixer';
 import RugPull from './components/RugPull';
 import DashboardExtras from './components/DashboardExtras';
 import LiquidityCreator from './components/LiquidityCreator';
-import WalletIcon from '@mui/icons-material/Wallet';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import '@solana/wallet-adapter-react-ui/styles.css';
+import './index.css';
 
-// Tema escuro personalizado com gradientes e estilização moderna
+// Tema personalizado
 const darkTheme = createTheme({
   palette: {
     mode: 'dark',
-    primary: { main: '#ff4444' },
-    secondary: { main: '#00e676' },
+    primary: { main: '#92E643' },
     background: {
-      default: '#0d0d0d',
-      paper: '#1a1a1a',
+      default: '#101010',
+      paper: '#101010',
+    },
+    text: {
+      primary: '#fff',
+      secondary: '#ccc',
     },
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          fontFamily: "'Press Start 2P', cursive",
+        },
+      },
+    },
     MuiTabs: {
       styleOverrides: {
         root: {
-          background: 'linear-gradient(45deg, #1a1a1a 30%, #2a2a2a 90%)',
-          borderRadius: '10px',
+          background: '#101010',
           padding: '5px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
         },
       },
     },
@@ -49,15 +61,57 @@ const darkTheme = createTheme({
       styleOverrides: {
         root: {
           color: '#fff',
-          fontWeight: 'bold',
+          fontFamily: "'Press Start 2P', cursive",
+          textTransform: 'uppercase',
           '&.Mui-selected': {
-            color: '#ff4444',
-            background: 'rgba(255, 68, 68, 0.1)',
+            color: '#fff',
+            background: 'rgba(57, 255, 20, 0.1)',
             borderRadius: '8px',
           },
           transition: 'all 0.3s ease',
         },
       },
+    },
+    MuiTypography: {
+      styleOverrides: {
+        root: {
+          fontFamily: "'Press Start 2P', cursive",
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          fontFamily: "'Press Start 2P', cursive",
+        },
+      },
+    },
+    MuiAccordion: {
+      styleOverrides: {
+        root: {
+          fontFamily: "'Press Start 2P', cursive",
+        },
+      },
+    },
+  },
+  typography: {
+    fontFamily: "'Press Start 2P', cursive",
+    h1: {
+      fontFamily: "'Press Start 2P', cursive",
+      color: '#92E643',
+      textTransform: 'uppercase',
+      fontSize: '3.5rem',
+    },
+    h2: {
+      fontFamily: "'Press Start 2P', cursive",
+      color: '#92E643',
+      fontSize: '1.5rem',
+    },
+    body1: {
+      color: '#fff',
+    },
+    body2: {
+      color: '#ccc',
     },
   },
 });
@@ -70,59 +124,52 @@ function App() {
     setTab(newValue);
   };
 
-  // Componente de conexão da carteira
-  const WalletConnection = () => (
-    <Card
-      sx={{
-        background: 'linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%)',
-        borderRadius: '15px',
-        mb: 4,
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-        border: '1px solid rgba(255, 68, 68, 0.2)',
-      }}
-    >
-      <CardContent sx={{ p: 3 }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={6}>
-            <Box display="flex" alignItems="center" gap={2}>
-              <WalletIcon sx={{ fontSize: 40, color: '#ff4444' }} />
-              <Box>
-                <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold' }}>
-                  {connected ? 'Wallet Connected' : 'Connect Your Wallet'}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                {connected && publicKey
-                  ? DOMPurify.sanitize(`${publicKey.toBase58().slice(0, 6)}...${publicKey.toBase58().slice(-6)}`)
-                  : 'Connect to access all features'}
-              </Typography>
-              </Box>
-            </Box>
-          </Grid>
-          <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'center', md: 'right' } }}>
-            <WalletMultiButton
-              style={{
-                background: 'linear-gradient(45deg, #ff4444 30%, #ff6666 90%)',
-                borderRadius: '8px',
-                padding: '10px 20px',
-                fontWeight: 'bold',
-                color: '#fff',
-                border: 'none',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  background: 'linear-gradient(45deg, #ff6666 30%, #ff8888 90%)',
-                },
-              }}
-            />
-          </Grid>
-        </Grid>
-        {connected && (
-          <>
-            <Divider sx={{ my: 2, borderColor: 'rgba(255, 68, 68, 0.2)' }} />
-            <UserBalance />
-          </>
-        )}
-      </CardContent>
-    </Card>
+  const Header = () => (
+    <Box sx={{ padding: 2, backgroundColor: '#101010' }}>
+      <Box sx={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center'
+      }}>
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="h1">SOL-HEAVEN</Typography>
+          </Box>
+          <Typography variant="h2" className="solsugs" sx={{ ml: 2 }}>SOLMAKER</Typography>
+        </Box>
+        <Box>
+          <WalletMultiButton
+            style={{
+              background: 'linear-gradient(45deg, #92E643 30%, #7BC936 90%)',
+              borderRadius: '8px',
+              padding: '10px 20px',
+              fontWeight: 'bold',
+              color: '#101010',
+              border: 'none',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #7BC936 30%, #92E643 90%)',
+              },
+            }}
+          />
+        </Box>
+      </Box>
+    </Box>
+  );
+
+  const Footer = () => (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 2, backgroundColor: '#101010', mt: 'auto' }}>
+      <Accordion defaultExpanded>
+        <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#92E643' }} />}>
+          <Typography variant="body2" className="solsugs">What is SOL-HEAVEN?</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Typography variant="body2">
+            SOL-HEAVEN is a comprehensive toolkit for Solana token creation and management. It allows you to create tokens, manage wallets, mix transactions, create liquidity pools, and access additional DeFi features on the Solana blockchain.
+          </Typography>
+        </AccordionDetails>
+      </Accordion>
+    </Box>
   );
 
   return (
@@ -130,44 +177,18 @@ function App() {
       <Box
         sx={{
           minHeight: '100vh',
-          background: 'linear-gradient(to bottom, #0d0d0d 0%, #1a1a1a 100%)',
-          py: 4,
+          backgroundColor: '#101010',
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
         }}
       >
-        <Container maxWidth="lg">
-          {/* Seção de Cabeçalho */}
-          <Box sx={{ mb: 6, textAlign: 'center' }}>
-            <Typography
-              variant="h3"
-              sx={{
-                background: 'linear-gradient(45deg, #ff4444, #ff6666)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                fontWeight: 'bold',
-                mb: 1,
-              }}
-            >
-              Solana Dashboard
-            </Typography>
-            <Typography variant="subtitle1" color="text.secondary">
-              Create, manage, and explore your Solana assets
-            </Typography>
-          </Box>
-
-          {/* Conexão da Carteira */}
-          <WalletConnection />
-
-          {/* Navegação por Abas */}
+        <Header />
+        <Container maxWidth="lg" sx={{ flexGrow: 1 }}>
           <Tabs
             value={tab}
             onChange={handleTabChange}
             centered
-            sx={{
-              mb: 4,
-            }}
+            sx={{ mb: 4, borderBottom: '2px solid #92E643'}}
           >
             <Tab label="Coin Creator" />
             <Tab label="Wallet Manager" />
@@ -177,10 +198,9 @@ function App() {
             <Tab label="Extras" />
           </Tabs>
 
-          {/* Conteúdo das Abas */}
           <Card
             sx={{
-              background: '#1a1a1a',
+              background: '#101010',
               borderRadius: '15px',
               p: 3,
               boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
@@ -197,6 +217,7 @@ function App() {
             </Box>
           </Card>
         </Container>
+        <Footer />
       </Box>
     </ThemeProvider>
   );

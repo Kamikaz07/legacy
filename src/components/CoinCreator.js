@@ -13,18 +13,38 @@ import {
   Card,
   CardContent,
   Grid,
+  Tooltip,
 } from "@mui/material";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Connection, clusterApiUrl, Transaction } from "@solana/web3.js";
 import { useDropzone } from "react-dropzone";
 import axios from "axios";
+import InfoIcon from '@mui/icons-material/Info';
+import SettingsIcon from '@mui/icons-material/Settings';
+import LinkIcon from '@mui/icons-material/Link';
+import SecurityIcon from '@mui/icons-material/Security';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import PersonIcon from '@mui/icons-material/Person';
+import AbcIcon from '@mui/icons-material/Abc';
+import DescriptionIcon from '@mui/icons-material/Description';
+import TwitterIcon from '@mui/icons-material/Twitter';
+import LanguageIcon from '@mui/icons-material/Language';
+import TelegramIcon from '@mui/icons-material/Telegram';
 
 const steps = [
-  "Informações Básicas",
-  "Configurações Técnicas",
-  "Links Sociais",
-  "Revogar Autoridades",
-  "Confirmação",
+  "Basic Information",
+  "Technical Settings",
+  "Social Links",
+  "Revoke Authorities",
+  "Confirmation",
+];
+
+const stepIcons = [
+  <InfoIcon sx={{ color: '#92E643' }} />,
+  <SettingsIcon sx={{ color: '#92E643' }} />,
+  <LinkIcon sx={{ color: '#92E643' }} />,
+  <SecurityIcon sx={{ color: '#92E643' }} />,
+  <CheckCircleIcon sx={{ color: '#92E643' }} />,
 ];
 
 const CoinCreator = () => {
@@ -68,10 +88,9 @@ const CoinCreator = () => {
   const onDrop = useCallback((acceptedFiles) => {
     const file = acceptedFiles[0];
     if (file) {
-      console.log("Arquivo aceito:", file);
       setImageFile(file);
     } else {
-      console.log("Nenhum arquivo aceito pelo useDropzone.");
+      setErrorMessage("Invalid file. PNG only up to 300KB.");
     }
   }, []);
 
@@ -79,7 +98,7 @@ const CoinCreator = () => {
     onDrop,
     accept: { "image/png": [".png"] },
     maxSize: 300 * 1024,
-    onDropRejected: () => setErrorMessage("Ficheiro inválido. Apenas PNG até 300KB."),
+    onDropRejected: () => setErrorMessage("Invalid file. PNG only up to 300KB."),
   });
 
   const handleNext = () => {
@@ -92,33 +111,33 @@ const CoinCreator = () => {
 
   const handleSubmit = async () => {
     if (!connected || !publicKey) {
-      setErrorMessage("Por favor, conecte a sua carteira primeiro.");
+      setErrorMessage("Please connect your wallet first.");
       return;
     }
     if (name.length > MAX_NAME_LENGTH || symbol.length > MAX_SYMBOL_LENGTH || description.length > MAX_DESCRIPTION_LENGTH) {
-      setErrorMessage("Os campos excedem o comprimento máximo permitido.");
+      setErrorMessage("Fields exceed maximum allowed length.");
       return;
     }
     if (!name || !symbol || !imageFile) {
-      setErrorMessage("Nome, Símbolo e Imagem são obrigatórios.");
+      setErrorMessage("Name, Symbol and Image are required.");
       return;
     }
     if (decimals < 0 || decimals > 18) {
-      setErrorMessage("Decimals deve estar entre 0 e 18.");
+      setErrorMessage("Decimals must be between 0 and 10.");
       return;
     }
     if (supply <= 0) {
-      setErrorMessage("Supply deve ser maior que zero.");
+      setErrorMessage("Supply must be greater than zero.");
       return;
     }
     if (tax < 0 || tax > 1000) {
-      setErrorMessage("Taxa de Transferência deve estar entre 0 e 1000 basis points.");
+      setErrorMessage("Transfer Tax must be between 0 and 1000 basis points.");
       return;
     }
 
     setLoading(true);
     try {
-      const csrfResponse = await axios.get(process.env.REACT_APP_API_URL + "/api/get-csrf-token", {
+      const csrfResponse = await axios.get(`${process.env.REACT_APP_API_URL}/api/get-csrf-token`, {
         withCredentials: true,
       });
       const csrfToken = csrfResponse.data.csrfToken;
@@ -173,14 +192,12 @@ const CoinCreator = () => {
         );
         setMintAddress(response.data.mintPublicKey);
         setErrorMessage(null);
-        console.log("Token criado com sucesso! Mint:", response.data.mintPublicKey, "TxID:", signature);
         handleNext();
       } else {
-        setErrorMessage("Erro ao criar o token. Por favor, tente novamente.");
-      }
-    } catch (error) {
-      setErrorMessage("Erro ao criar o token. Verifique a conexão ou o servidor.");
-      console.error("Erro detalhado:", error);
+        setErrorMessage("Error creating token. Please try again.");
+            }
+          } catch (error) {
+            setErrorMessage(error.response?.data?.message || "Error creating token. Check your connection or the server.");
     } finally {
       setLoading(false);
     }
@@ -189,14 +206,14 @@ const CoinCreator = () => {
   const renderActionButton = () => {
     if (activeStep === 3) {
       return (
-        <Button variant="contained" onClick={handleSubmit} disabled={loading}>
-          {loading ? <CircularProgress size={24} /> : "Criar Token"}
+        <Button variant="contained" onClick={handleSubmit} disabled={loading} sx={{ backgroundColor: '#92E643', color: '#000' }}>
+          {loading ? <CircularProgress size={24} /> : "Create Token"}
         </Button>
       );
     } else if (activeStep < 3) {
       return (
-        <Button variant="contained" onClick={handleNext} disabled={loading}>
-          {loading ? <CircularProgress size={24} /> : "Próximo"}
+        <Button variant="contained" onClick={handleNext} disabled={loading} sx={{ backgroundColor: '#92E643', color: '#' }}>
+          {loading ? <CircularProgress size={24} /> : "Next"}
         </Button>
       );
     }
@@ -208,49 +225,93 @@ const CoinCreator = () => {
       case 0:
         return (
           <>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+          <TextField
+            label="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            fullWidth
+            margin="normal"
+            InputProps={{ startAdornment: <PersonIcon sx={{ color: '#92E643', mr: 1 }} /> }}
+            error={name.length > MAX_NAME_LENGTH}
+            helperText={name.length > MAX_NAME_LENGTH ? `Maximum ${MAX_NAME_LENGTH} characters` : ''}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+          borderRadius: '8px',
+          '&:hover fieldset': { borderColor: '#92E643' },
+          '&.Mui-focused fieldset': { borderColor: '#92E643' },
+              },
+            }}
+          />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+          <TextField
+            label="Symbol"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+            fullWidth
+            margin="normal"
+            InputProps={{ startAdornment: <AbcIcon sx={{ color: '#92E643', mr: 1 }} /> }}
+            error={symbol.length > MAX_SYMBOL_LENGTH}
+            helperText={symbol.length > MAX_SYMBOL_LENGTH ? `Maximum ${MAX_SYMBOL_LENGTH} characters` : ''}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+          borderRadius: '8px',
+          '&:hover fieldset': { borderColor: '#92E643' },
+          '&.Mui-focused fieldset': { borderColor: '#92E643' },
+              },
+            }}
+          />
+              </Grid>
+            </Grid>
             <TextField
-              label="Nome"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              fullWidth
-              margin="normal"
-            />
-            <TextField
-              label="Símbolo"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              fullWidth
-              margin="normal"
-            />
-            <TextField
-              label="Descrição"
+              label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               fullWidth
               margin="normal"
-            />
-            <div
-              {...getRootProps()}
-              style={{
-                border: "2px dashed #ccc",
-                padding: "20px",
-                textAlign: "center",
-                cursor: "pointer",
-                marginTop: "16px",
+              multiline
+              rows={4}
+              InputProps={{ startAdornment: <DescriptionIcon sx={{ color: '#92E643', mr: 1, alignSelf: 'flex-start', mt: 1 }} /> }}
+              error={description.length > MAX_DESCRIPTION_LENGTH}
+              helperText={description.length > MAX_DESCRIPTION_LENGTH ? `Maximum ${MAX_DESCRIPTION_LENGTH} characters` : ''}
+              sx={{
+          '& .MuiOutlinedInput-root': {
+            borderRadius: '8px',
+            '&:hover fieldset': { borderColor: '#92E643' },
+            '&.Mui-focused fieldset': { borderColor: '#92E643' },
+          },
               }}
-            >
-              <input {...getInputProps()} />
-              <Typography>
-                Arraste e solte a imagem aqui, ou clique para selecionar
-              </Typography>
-              <Typography variant="caption" color="textSecondary">
-                (Formato: PNG, tamanho máximo: 300KB)
-              </Typography>
-            </div>
-            {imageFile && (
-              <Box mt={2}>
-                <Typography>Prévia da imagem:</Typography>
-                <img src={URL.createObjectURL(imageFile)} alt="Prévia" style={{ maxWidth: "200px" }} />
+            />
+            {!imageFile ? (
+              <div
+          {...getRootProps()}
+          style={{
+            border: '2px dashed #92E643',
+            padding: '20px',
+            textAlign: 'center',
+            cursor: 'pointer',
+            marginTop: '16px',
+            background: 'rgba(57, 255, 20, 0.05)',
+            borderRadius: '8px',
+          }}
+              >
+          <input {...getInputProps()} />
+          <Typography>Drag and drop an image here, or click to select</Typography>
+          <Typography variant="caption" color="textSecondary">
+            (Format: PNG, max size: 300KB)
+          </Typography>
+              </div>
+            ) : (
+              <Box mt={2} sx={{ textAlign: 'center' }}>
+          <img src={URL.createObjectURL(imageFile)} alt="Preview" style={{ maxWidth: "200px" }} />
+          <Button 
+            onClick={() => setImageFile(null)} 
+            sx={{ display: 'block', margin: '10px auto', color: '#92E643' }}
+          >
+            Change Image
+          </Button>
               </Box>
             )}
           </>
@@ -266,6 +327,13 @@ const CoinCreator = () => {
               margin="normal"
               type="number"
               inputProps={{ min: 0, max: 18 }}
+              sx={{
+          '& .MuiOutlinedInput-root': {
+            borderRadius: '8px',
+            '&:hover fieldset': { borderColor: '#92E643' },
+            '&.Mui-focused fieldset': { borderColor: '#92E643' },
+          },
+              }}
             />
             <TextField
               label="Supply"
@@ -275,18 +343,32 @@ const CoinCreator = () => {
               margin="normal"
               type="number"
               inputProps={{ min: 1 }}
+              sx={{
+          '& .MuiOutlinedInput-root': {
+            borderRadius: '8px',
+            '&:hover fieldset': { borderColor: '#92E643' },
+            '&.Mui-focused fieldset': { borderColor: '#92E643' },
+          },
+              }}
             />
             <TextField
-              label="Taxa de Transferência (0-1000 basis points)"
+              label="Transfer Tax (0-1000 basis points)"
               value={tax}
               onChange={(e) => setTax(e.target.value)}
               fullWidth
               margin="normal"
               type="number"
               inputProps={{ min: 0, max: 1000 }}
+              sx={{
+          '& .MuiOutlinedInput-root': {
+            borderRadius: '8px',
+            '&:hover fieldset': { borderColor: '#92E643' },
+            '&.Mui-focused fieldset': { borderColor: '#92E643' },
+          },
+              }}
             />
             <Typography variant="caption" color="textSecondary">
-              A taxa de transferência é cobrada em cada transação do token. 100 basis points = 1%.
+              The transfer tax is charged on each token transaction. 100 basis points = 1%.
             </Typography>
           </>
         );
@@ -294,25 +376,49 @@ const CoinCreator = () => {
         return (
           <>
             <TextField
-              label="Twitter (opcional)"
+              label="Twitter (optional)"
               value={socialLinks.twitter}
               onChange={(e) => setSocialLinks({ ...socialLinks, twitter: e.target.value })}
               fullWidth
               margin="normal"
+              InputProps={{ startAdornment: <TwitterIcon sx={{ color: '#92E643', mr: 1 }} /> }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '8px',
+                  '&:hover fieldset': { borderColor: '#92E643' },
+                  '&.Mui-focused fieldset': { borderColor: '#92E643' },
+                },
+              }}
             />
             <TextField
-              label="Website (opcional)"
+              label="Website (optional)"
               value={socialLinks.website}
               onChange={(e) => setSocialLinks({ ...socialLinks, website: e.target.value })}
               fullWidth
               margin="normal"
+              InputProps={{ startAdornment: <LanguageIcon sx={{ color: '#92E643', mr: 1 }} /> }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '8px',
+                  '&:hover fieldset': { borderColor: '#92E643' },
+                  '&.Mui-focused fieldset': { borderColor: '#92E643' },
+                },
+              }}
             />
             <TextField
-              label="Telegram (opcional)"
+              label="Telegram (optional)"
               value={socialLinks.telegram}
               onChange={(e) => setSocialLinks({ ...socialLinks, telegram: e.target.value })}
               fullWidth
               margin="normal"
+              InputProps={{ startAdornment: <TelegramIcon sx={{ color: '#92E643', mr: 1 }} /> }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '8px',
+                  '&:hover fieldset': { borderColor: '#92E643' },
+                  '&.Mui-focused fieldset': { borderColor: '#92E643' },
+                },
+              }}
             />
           </>
         );
@@ -320,61 +426,70 @@ const CoinCreator = () => {
         return (
           <Grid container spacing={2}>
             <Grid item xs={12} sm={4}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6">Revogar Mint Authority</Typography>
-                  <Typography variant="body2">
-                    Revogar a autoridade de mint impede que mais tokens sejam criados no futuro.
-                  </Typography>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={revokeMintAuthority}
-                        onChange={(e) => setRevokeMintAuthority(e.target.checked)}
-                      />
-                    }
-                    label="Ativar"
-                  />
-                </CardContent>
-              </Card>
+              <Tooltip title="Prevents the creation of new tokens after launch">
+          <Card sx={{ background: '#020301', borderRadius: '8px' }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ color: '#92E643' }}>Revoke Mint Authority</Typography>
+              <Typography variant="body2">
+                Revoking mint authority prevents more tokens from being created in the future.
+              </Typography>
+              <FormControlLabel
+                control={
+            <Checkbox
+              checked={revokeMintAuthority}
+              onChange={(e) => setRevokeMintAuthority(e.target.checked)}
+              sx={{ color: '#92E643', '&.Mui-checked': { color: '#92E643' } }}
+            />
+                }
+                label="Enable"
+              />
+            </CardContent>
+          </Card>
+              </Tooltip>
             </Grid>
             <Grid item xs={12} sm={4}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6">Revogar Freeze Authority</Typography>
-                  <Typography variant="body2">
-                    Revogar a autoridade de freeze impede que contas de tokens sejam congeladas.
-                  </Typography>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={revokeFreezeAuthority}
-                        onChange={(e) => setRevokeFreezeAuthority(e.target.checked)}
-                      />
-                    }
-                    label="Ativar"
-                  />
-                </CardContent>
-              </Card>
+              <Tooltip title="Prevents token accounts from being frozen">
+          <Card sx={{ background: '#020301', borderRadius: '8px' }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ color: '#92E643' }}>Revoke Freeze Authority</Typography>
+              <Typography variant="body2">
+                Revoking freeze authority prevents token accounts from being frozen.
+              </Typography>
+              <FormControlLabel
+                control={
+            <Checkbox
+              checked={revokeFreezeAuthority}
+              onChange={(e) => setRevokeFreezeAuthority(e.target.checked)}
+              sx={{ color: '#92E643', '&.Mui-checked': { color: '#92E643' } }}
+            />
+                }
+                label="Enable"
+              />
+            </CardContent>
+          </Card>
+              </Tooltip>
             </Grid>
             <Grid item xs={12} sm={4}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6">Revogar Update Authority</Typography>
-                  <Typography variant="body2">
-                    Revogar a autoridade de update impede alterações nos metadados do token.
-                  </Typography>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={revokeUpdateAuthority}
-                        onChange={(e) => setRevokeUpdateAuthority(e.target.checked)}
-                      />
-                    }
-                    label="Ativar"
-                  />
-                </CardContent>
-              </Card>
+              <Tooltip title="Prevents changes to token metadata">
+          <Card sx={{ background: '#020301', borderRadius: '8px' }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ color: '#92E643' }}>Revoke Update Authority</Typography>
+              <Typography variant="body2">
+                Revoking update authority prevents changes to token metadata.
+              </Typography>
+              <FormControlLabel
+                control={
+            <Checkbox
+              checked={revokeUpdateAuthority}
+              onChange={(e) => setRevokeUpdateAuthority(e.target.checked)}
+              sx={{ color: '#92E643', '&.Mui-checked': { color: '#92E643' } }}
+            />
+                }
+                label="Enable"
+              />
+            </CardContent>
+          </Card>
+              </Tooltip>
             </Grid>
           </Grid>
         );
@@ -383,41 +498,41 @@ const CoinCreator = () => {
           <Box sx={{ padding: 2, marginLeft: 4 }}>
             {mintAddress ? (
               <>
-                <Typography variant="h6">Token criado com sucesso!</Typography>
-                <Typography sx={{ mar: 2 }}>Token Address: {mintAddress}</Typography>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  href={`https://raydium.io/liquidity/create-pool/`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  sx={{ mt: 2, mr: 2 }}
-                >
-                  Create Liquidity Pool
-                </Button>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  href={`https://solscan.io/token/${mintAddress}?cluster=devnet`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  sx={{ mt: 2, mr: 2 }}
-                >
-                  View on Solscan
-                </Button>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  href={`https://explorer.solana.com/address/${mintAddress}?cluster=devnet`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  sx={{ mt: 2 }}
-                >
-                  View on Explorer
-                </Button>
+          <Box display="flex" alignItems="center" gap={1}>
+            <CheckCircleIcon sx={{ color: '#92E643', fontSize: 40 }} />
+            <Typography variant="h6">Token created successfully!</Typography>
+          </Box>
+          <Typography sx={{ mt: 2 }}>Token Address: {mintAddress}</Typography>
+          <Button
+            variant="contained"
+            sx={{ backgroundColor: '#92E643', color: '#000', mt: 2, mr: 2 }}
+            href={`https://raydium.io/liquidity/create-pool/`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Create Liquidity Pool
+          </Button>
+          <Button
+            variant="contained"
+            sx={{ backgroundColor: '#92E643', color: '#000', mt: 2, mr: 2 }}
+            href={`https://solscan.io/token/${mintAddress}?cluster=devnet`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View on Solscan
+          </Button>
+          <Button
+            variant="contained"
+            sx={{ backgroundColor: '#92E643', color: '#000', mt: 2 }}
+            href={`https://explorer.solana.com/address/${mintAddress}?cluster=devnet`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View on Explorer
+          </Button>
               </>
             ) : (
-              <Typography>Erro ao criar o token. Por favor, tente novamente.</Typography>
+              <Typography>Error creating token. Please try again.</Typography>
             )}
           </Box>
         );
@@ -428,24 +543,24 @@ const CoinCreator = () => {
 
   return (
     <Box>
-      <Typography variant="h5">Criar um novo token</Typography>
-      <Stepper activeStep={activeStep} alternativeLabel>
-        {steps.map((label) => (
+      <Typography variant="h5" sx={{ color: '#92E643' }}>Create a new token</Typography>
+      <Stepper activeStep={activeStep} alternativeLabel sx={{ '& .MuiStepIcon-active': { color: '#92E643' } }}>
+        {steps.map((label, index) => (
           <Step key={label}>
-            <StepLabel>{label}</StepLabel>
+            <StepLabel icon={stepIcons[index]}>{label}</StepLabel>
           </Step>
         ))}
       </Stepper>
       <Box mt={2}>
         {activeStep === steps.length ? (
-          <Typography>Token criado com sucesso!</Typography>
+          <Typography>Token created successfully!</Typography>
         ) : (
           <>
             {getStepContent(activeStep)}
             <Box mt={2}>
               {activeStep !== 0 && (
-                <Button onClick={handleBack} sx={{ mr: 1 }}>
-                  Voltar
+                <Button onClick={handleBack} sx={{ mr: 1, color: '#92E643' }}>
+                  Back
                 </Button>
               )}
               {renderActionButton()}
@@ -458,6 +573,7 @@ const CoinCreator = () => {
           {errorMessage}
         </Typography>
       )}
+      {loading && <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 2, color: '#92E643' }} />}
     </Box>
   );
 };

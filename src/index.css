@@ -1,22 +1,79 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
-
-/* index.css */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 @import "@solana/wallet-adapter-react-ui/styles.css";
+
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  font-family: 'Press Start 2P', cursive;
+  background-color: #101010;
+}
+
+/* Header */
+.solsugs {
+  font-family: 'Press Start 2P', cursive;
+  color: #92E643;
+  text-transform: uppercase;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5), 0 0 5px #92E643;
+}
+
+.exclamation {
+  color: #92E643;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+/* Footer */
+.toggle-button {
+  background-color: #fff !important;
+  color: #101010 !important;
+  border: 1px solid #101010 !important;
+  border-radius: 50% !important;
+  padding: 10px !important;
+  margin-right: 10px !important;
+  font-weight: bold !important;
+  text-transform: uppercase !important;
+  width: 50px;
+  height: 50px;
+}
+
+.toggle-button:not(.active) {
+  background-color: #666 !important;
+  color: #fff !important;
+}
+
+.MuiAccordion-root {
+  background-color: #101010 !important;
+  color: #fff !important;
+}
+
+.accordion-title {
+  color: #fff;
+  border-bottom: 1px solid #92E643;
+}
+
+.MuiAccordionSummary-root {
+  background-color: #101010 !important;
+}
+
+.MuiAccordionSummary-content {
+  color: #fff !important;
+}
+
+.MuiAccordionDetails-root {
+  color: #fff !important;
+}
+
+/* Ajustes para abas */
+.MuiTabs-root {
+  background-color: #101010 !important;
+}
+
+.MuiTab-root {
+  color: #fff !important;
+  text-transform: uppercase !important;
+}
+
+.Mui-selected {
+  color: #fff !important;
+  font-size: 1.1em !important;
 }
