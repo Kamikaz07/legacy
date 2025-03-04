@@ -174,7 +174,11 @@ const CoinCreator = () => {
       setErrorMessage("Please connect your wallet first.");
       return;
     }
-    if (name.length > MAX_NAME_LENGTH || symbol.length > MAX_SYMBOL_LENGTH || description.length > MAX_DESCRIPTION_LENGTH) {
+    if (
+      name.length > MAX_NAME_LENGTH ||
+      symbol.length > MAX_SYMBOL_LENGTH ||
+      description.length > MAX_DESCRIPTION_LENGTH
+    ) {
       setErrorMessage("Fields exceed maximum allowed length.");
       return;
     }
@@ -182,7 +186,7 @@ const CoinCreator = () => {
       setErrorMessage("Name, Symbol and Image are required.");
       return;
     }
-    if (decimals < 0 || decimals > 18) {
+    if (decimals < 0 || decimals > 10) {
       setErrorMessage("Decimals must be between 0 and 10.");
       return;
     }
@@ -194,15 +198,18 @@ const CoinCreator = () => {
       setErrorMessage("Transfer Tax must be between 0 and 1000 basis points.");
       return;
     }
-
+  
     setLoading(true);
     try {
-      const csrfResponse = await axios.get(`${process.env.REACT_APP_API_URL}/api/get-csrf-token`, {
-        withCredentials: true,
-      });
+      const csrfResponse = await axios.get(
+        `${process.env.REACT_APP_API_URL}/api/get-csrf-token`,
+        {
+          withCredentials: true,
+        }
+      );
       const csrfToken = csrfResponse.data.csrfToken;
-      console.log("CSRF Token obtido:", csrfToken);
-
+      console.log("CSRF Token obtido:", csrfToken); // Log adicionado
+  
       const formData = new FormData();
       formData.append("image", imageFile);
       formData.append("name", name);
@@ -215,16 +222,19 @@ const CoinCreator = () => {
       formData.append("revokeMintAuthority", revokeMintAuthority);
       formData.append("revokeFreezeAuthority", revokeFreezeAuthority);
       formData.append("revokeUpdateAuthority", revokeUpdateAuthority);
-
+  
       const filteredSocialLinks = {};
       if (socialLinks.website) filteredSocialLinks.website = socialLinks.website;
       if (socialLinks.twitter) filteredSocialLinks.twitter = socialLinks.twitter;
-      if (socialLinks.telegram) filteredSocialLinks.telegram = socialLinks.telegram;
-
+      if (socialLinks.telegram)
+        filteredSocialLinks.telegram = socialLinks.telegram;
+  
       if (Object.keys(filteredSocialLinks).length > 0) {
         formData.append("socialLinks", JSON.stringify(filteredSocialLinks));
       }
-
+  
+      console.log("Enviando requisição POST com token:", csrfToken); // Log adicionado
+  
       const response = await axios.post(
         `${process.env.REACT_APP_API_URL}/api/create-token`,
         formData,
@@ -236,12 +246,14 @@ const CoinCreator = () => {
           withCredentials: true,
         }
       );
-
+  
       if (response.status === 200) {
         const transactionBytes = base64ToUint8Array(response.data.transaction);
         const transaction = Transaction.from(transactionBytes);
         const signedTransaction = await signTransaction(transaction);
-        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        const signature = await connection.sendRawTransaction(
+          signedTransaction.serialize()
+        );
         const latestBlockhash = await connection.getLatestBlockhash();
         await connection.confirmTransaction(
           {
@@ -256,9 +268,13 @@ const CoinCreator = () => {
         handleNext();
       } else {
         setErrorMessage("Error creating token. Please try again.");
-            }
-          } catch (error) {
-            setErrorMessage(error.response?.data?.message || "Error creating token. Check your connection or the server.");
+      }
+    } catch (error) {
+      console.error("Erro na requisição:", error); // Log detalhado
+      setErrorMessage(
+        error.response?.data?.message ||
+          "Erro ao criar o token. Verifique sua conexão ou o servidor."
+      );
     } finally {
       setLoading(false);
     }
