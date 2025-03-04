@@ -197,7 +197,7 @@ const CoinCreator = () => {
 
     setLoading(true);
     try {
-      const csrfResponse = await axios.get(`${process.env.REACT_APP_API_URL}/get-csrf-token`, {
+      const csrfResponse = await axios.get(`${process.env.REACT_APP_API_URL}/api/get-csrf-token`, {
         withCredentials: true,
       });
       const csrfToken = csrfResponse.data.csrfToken;
@@ -225,7 +225,7 @@ const CoinCreator = () => {
       }
 
       const response = await axios.post(
-        `${process.env.REACT_APP_API_URL}/create-token`,
+        `${process.env.REACT_APP_API_URL}/api/create-token`,
         formData,
         {
           headers: {
