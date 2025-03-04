@@ -186,8 +186,8 @@ const CoinCreator = () => {
       setErrorMessage("Name, Symbol and Image are required.");
       return;
     }
-    if (decimals < 0 || decimals > 10) {
-      setErrorMessage("Decimals must be between 0 and 10.");
+    if (decimals < 0 || decimals > 18) { // Ajustado para 18, padrão Solana
+      setErrorMessage("Decimals must be between 0 and 18.");
       return;
     }
     if (supply <= 0) {
@@ -201,15 +201,6 @@ const CoinCreator = () => {
   
     setLoading(true);
     try {
-      const csrfResponse = await axios.get(
-        `${process.env.REACT_APP_API_URL}/api/get-csrf-token`,
-        {
-          withCredentials: true,
-        }
-      );
-      const csrfToken = csrfResponse.data.csrfToken;
-      console.log("CSRF Token obtido:", csrfToken); // Log adicionado
-  
       const formData = new FormData();
       formData.append("image", imageFile);
       formData.append("name", name);
@@ -233,17 +224,15 @@ const CoinCreator = () => {
         formData.append("socialLinks", JSON.stringify(filteredSocialLinks));
       }
   
-      console.log("Enviando requisição POST com token:", csrfToken); // Log adicionado
-  
+      console.log("Enviando requisição POST para criar token");
+
       const response = await axios.post(
         `${process.env.REACT_APP_API_URL}/api/create-token`,
         formData,
         {
           headers: {
             "Content-Type": "multipart/form-data",
-            "X-CSRF-Token": csrfToken,
           },
-          withCredentials: true,
         }
       );
   
@@ -270,9 +259,9 @@ const CoinCreator = () => {
         setErrorMessage("Error creating token. Please try again.");
       }
     } catch (error) {
-      console.error("Erro na requisição:", error); // Log detalhado
+      console.error("Erro na requisição:", error);
       setErrorMessage(
-        error.response?.data?.message ||
+        error.response?.data?.error || 
           "Erro ao criar o token. Verifique sua conexão ou o servidor."
       );
     } finally {
