@@ -201,6 +201,7 @@ const CoinCreator = () => {
         withCredentials: true,
       });
       const csrfToken = csrfResponse.data.csrfToken;
+      console.log("CSRF Token obtido:", csrfToken);
 
       const formData = new FormData();
       formData.append("image", imageFile);
