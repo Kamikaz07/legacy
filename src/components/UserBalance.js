@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { Box, Typography } from '@mui/material';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 
 const UserBalance = () => {
   const { connection } = useConnection();
@@ -26,16 +28,25 @@ const UserBalance = () => {
   }, [wallet.connected, wallet.publicKey, connection]);
 
   return (
-    <div>
-      {wallet.connected ? (
-        <div>
-          <p>Connected to {wallet.wallet?.adapter?.name}</p>
-          <p>SOL Balance: {solBalance}</p>
-        </div>
-      ) : (
-        <p>Connect your wallet to view balances</p>
-      )}
-    </div>
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        color: '#fff',
+        fontFamily: "'Press Start 2P', cursive",
+        fontSize: '0.8rem'
+      }}
+    >
+      <AccountBalanceWalletIcon sx={{ color: '#92E643' }} />
+      <Typography sx={{ color: '#fff' }}>
+        {wallet.connected ? (
+          `${solBalance.toFixed(4)} SOL`
+        ) : (
+          'Not Connected'
+        )}
+      </Typography>
+    </Box>
   );
 };
 

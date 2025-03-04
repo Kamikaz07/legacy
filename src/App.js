@@ -100,7 +100,7 @@ const darkTheme = createTheme({
       fontFamily: "'Press Start 2P', cursive",
       color: '#92E643',
       textTransform: 'uppercase',
-      fontSize: '3.5rem',
+      fontSize: '3rem',
     },
     h2: {
       fontFamily: "'Press Start 2P', cursive",
@@ -133,25 +133,28 @@ function App() {
       }}>
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <Box>
-            <Typography variant="h1">SOL-HEAVEN</Typography>
+            <Typography variant="h1" sx={{ color: '#92E643' }}>SOL-HEAVEN</Typography>
           </Box>
-          <Typography variant="h2" className="solsugs" sx={{ ml: 2 }}>SOLMAKER</Typography>
+          <Typography variant="h2" className="solsugs" sx={{ ml: 2, color: '#92E643' }}>SOLMAKER</Typography>
         </Box>
-        <Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
           <WalletMultiButton
             style={{
-              background: 'linear-gradient(45deg, #92E643 30%, #7BC936 90%)',
+              background: 'transparent',
               borderRadius: '8px',
               padding: '10px 20px',
               fontWeight: 'bold',
-              color: '#101010',
-              border: 'none',
+              color: '#92E643',
+              border: '2px solid #92E643',
               transition: 'all 0.3s ease',
+              marginBottom: '10px',
+              width: '210px',
               '&:hover': {
-                background: 'linear-gradient(45deg, #7BC936 30%, #92E643 90%)',
+                background: 'rgba(146, 230, 67, 0.1)',
               },
             }}
           />
+          <UserBalance />
         </Box>
       </Box>
     </Box>

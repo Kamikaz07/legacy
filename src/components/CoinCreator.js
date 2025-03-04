@@ -30,6 +30,8 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import TwitterIcon from '@mui/icons-material/Twitter';
 import LanguageIcon from '@mui/icons-material/Language';
 import TelegramIcon from '@mui/icons-material/Telegram';
+import { styled } from "@mui/material/styles";
+import StepConnector, { stepConnectorClasses } from '@mui/material/StepConnector';
 
 const steps = [
   "Basic Information",
@@ -46,6 +48,64 @@ const stepIcons = [
   <SecurityIcon sx={{ color: '#92E643' }} />,
   <CheckCircleIcon sx={{ color: '#92E643' }} />,
 ];
+
+const CustomStepConnector = styled(StepConnector)(() => ({
+  [`&.${stepConnectorClasses.alternativeLabel}`]: {
+    top: 22,
+  },
+  [`&.${stepConnectorClasses.active}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      background: '#92E643',
+      transition: 'all 0.4s ease',
+    },
+  },
+  [`&.${stepConnectorClasses.completed}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      background: '#92E643',
+    },
+  },
+  [`& .${stepConnectorClasses.line}`]: {
+    height: 2,
+    border: 0,
+    backgroundColor: 'rgba(146, 230, 67, 0.2)',
+    borderRadius: 1,
+    transition: 'all 0.4s ease',
+  },
+}));
+
+const CustomStepIconRoot = styled('div')(({ theme, ownerState }) => ({
+  color: 'rgba(146, 230, 67, 0.4)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '8px',
+  transition: 'all 0.8s ease',
+  transform: 'scale(1)',
+  '& .MuiSvgIcon-root': {
+    fontSize: '1.5rem',
+    transition: 'all 0.8s ease',
+  },
+  ...(ownerState.active && {
+    color: '#92E643',
+    transform: 'scale(1.2)',
+    '& .MuiSvgIcon-root': {
+      filter: 'drop-shadow(0 0 8px rgba(146, 230, 67, 0.5))',
+    },
+  }),
+  ...(ownerState.completed && {
+    color: '#92E643',
+  }),
+}));
+
+function CustomStepIcon(props) {
+  const { active, completed, className } = props;
+  
+  return (
+    <CustomStepIconRoot ownerState={{ completed, active }} className={className}>
+      {stepIcons[props.icon - 1]}
+    </CustomStepIconRoot>
+  );
+}
 
 const CoinCreator = () => {
   const { connected, publicKey, signTransaction } = useWallet();
@@ -206,15 +266,29 @@ const CoinCreator = () => {
   const renderActionButton = () => {
     if (activeStep === 3) {
       return (
-        <Button variant="contained" onClick={handleSubmit} disabled={loading} sx={{ backgroundColor: '#92E643', color: '#000' }}>
-          {loading ? <CircularProgress size={24} /> : "Create Token"}
-        </Button>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button 
+            variant="contained" 
+            onClick={handleSubmit} 
+            disabled={loading} 
+            sx={{ backgroundColor: '#92E643', color: '#000' }}
+          >
+            {loading ? <CircularProgress size={24} /> : "Create Token"}
+          </Button>
+        </Box>
       );
     } else if (activeStep < 3) {
       return (
-        <Button variant="contained" onClick={handleNext} disabled={loading} sx={{ backgroundColor: '#92E643', color: '#' }}>
-          {loading ? <CircularProgress size={24} /> : "Next"}
-        </Button>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button 
+            variant="contained" 
+            onClick={handleNext} 
+            disabled={loading} 
+            sx={{ backgroundColor: '#92E643', color: '#000' }}
+          >
+            Next
+          </Button>
+        </Box>
       );
     }
     return null;
@@ -544,10 +618,35 @@ const CoinCreator = () => {
   return (
     <Box>
       <Typography variant="h5" sx={{ color: '#92E643' }}>Create a new token</Typography>
-      <Stepper activeStep={activeStep} alternativeLabel sx={{ '& .MuiStepIcon-active': { color: '#92E643' } }}>
+      <Stepper 
+        activeStep={activeStep} 
+        alternativeLabel 
+        connector={<CustomStepConnector />}
+        sx={{ 
+          my: 4,
+          '& .MuiStepLabel-label': {
+            color: 'rgba(255, 255, 255, 0.5)',
+            transition: 'all 0.8s ease',
+            fontSize: '0.875rem',
+            '&.Mui-active': {
+              color: '#92E643',
+              fontWeight: 500,
+              textShadow: '0 0 10px rgba(146, 230, 67, 0.3)',
+            },
+            '&.Mui-completed': {
+              color: '#92E643',
+            }
+          },
+          '& .MuiStepLabel-iconContainer': {
+            transition: 'all 0.8s ease',
+          }
+        }}
+      >
         {steps.map((label, index) => (
           <Step key={label}>
-            <StepLabel icon={stepIcons[index]}>{label}</StepLabel>
+            <StepLabel StepIconComponent={CustomStepIcon}>
+              {label}
+            </StepLabel>
           </Step>
         ))}
       </Stepper>
@@ -557,12 +656,14 @@ const CoinCreator = () => {
         ) : (
           <>
             {getStepContent(activeStep)}
-            <Box mt={2}>
-              {activeStep !== 0 && (
-                <Button onClick={handleBack} sx={{ mr: 1, color: '#92E643' }}>
-                  Back
-                </Button>
-              )}
+            <Box mt={2} sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Box>
+                {activeStep !== 0 && activeStep !== 4 && (
+                  <Button onClick={handleBack} sx={{ color: '#92E643' }}>
+                    Back
+                  </Button>
+                )}
+              </Box>
               {renderActionButton()}
             </Box>
           </>
@@ -573,7 +674,6 @@ const CoinCreator = () => {
           {errorMessage}
         </Typography>
       )}
-      {loading && <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 2, color: '#92E643' }} />}
     </Box>
   );
 };
