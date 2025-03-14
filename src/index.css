@@ -1,11 +1,42 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 @import "@solana/wallet-adapter-react-ui/styles.css";
 
+/* Update the body selector at the top of the file */
 body {
   margin: 0;
   padding: 0;
   font-family: 'Press Start 2P', cursive;
-  background-color: #101010;
+  background-color: #0a0a0a !important; /* Force this background color with !important */
+  background-image: radial-gradient(rgba(146, 230, 67, 0.1) 1px, transparent 1px) !important;
+  background-size: 20px 20px !important;
+  background-attachment: fixed !important;
+}
+
+
+
+/* Add scrollbar styling to the entire app */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #92E643 rgba(0, 0, 0, 0.3);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #92E643;
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #7ac832;
 }
 
 /* Header */
@@ -63,17 +94,684 @@ body {
   color: #fff !important;
 }
 
-/* Ajustes para abas */
+/* SIMPLIFIED TAB STYLING */
 .MuiTabs-root {
-  background-color: #101010 !important;
+  background: rgba(0, 0, 0, 0.8) !important;
+  border-bottom: 4px solid #92E643 !important;
+  padding: 0 !important;
+  overflow: visible !important; /* Allow content to overflow for animations */
+  
 }
 
 .MuiTab-root {
-  color: #fff !important;
+  min-width: 120px !important;
+  min-height: 60px !important;
+  font-family: 'Press Start 2P', cursive !important;
+  font-size: 0.8rem !important;
+  letter-spacing: 0.5px !important;
   text-transform: uppercase !important;
+  color: #fff !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  border: 2px solid #92E643 !important;
+  border-bottom: none !important;
+  transition: all 0.2s ease !important;
+  margin: 0 5px !important;
+  padding: 10px 20px !important;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px !important; /* Add space at top for transform */
 }
 
-.Mui-selected {
-  color: #fff !important;
-  font-size: 1.1em !important;
+.MuiTab-root:hover {
+  background: rgba(146, 230, 67, 0.2) !important;
+  transform: translateY(-3px) !important; /* Move tab up on hover */
+  transition: transform 0.2s ease, background-color 0.2s ease !important;
 }
+
+.MuiTab-root.Mui-selected {
+  background: #92E643 !important;
+  color: #000 !important;
+  border-bottom: 2px solid #000 !important;
+}
+
+.MuiTabs-indicator {
+  background-color: #92E643 !important;
+  height: 6px !important;
+  border-top: 2px solid #000 !important;
+  border-bottom: 2px solid #000 !important;
+}
+
+.MuiTab-root {
+  min-width: 120px !important;
+  min-height: 40px !important;
+  font-family: 'Press Start 2P', cursive !important;
+  font-size: 0.85rem !important; /* Increased from 0.7rem */
+  letter-spacing: 0.5px !important;
+  text-transform: uppercase !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  background: transparent !important;
+  border-radius: 4px 4px 0 0 !important;
+  transition: all 0.2s ease !important;
+  margin: 0 5px !important; /* Increased margin for better spacing */
+  padding: 8px 16px !important;
+  border-bottom: none !important;
+  border-top: 2px solid transparent !important;
+  border-left: 2px solid transparent !important;
+  border-right: 2px solid transparent !important;
+}
+
+.MuiTab-root:hover {
+  color: #ffffff !important;
+  background: rgba(146, 230, 67, 0.1) !important;
+  border-top-color: rgba(146, 230, 67, 0.3) !important;
+  border-left-color: rgba(146, 230, 67, 0.3) !important;
+  border-right-color: rgba(146, 230, 67, 0.3) !important;
+}
+
+.MuiTab-root.Mui-selected {
+  background: rgba(10, 10, 10, 0.9) !important;
+  color: #92E643 !important;
+  border-top: 2px solid #92E643 !important;
+  border-left: 2px solid #92E643 !important;
+  border-right: 2px solid #92E643 !important;
+  font-weight: bold !important;
+}
+
+/* Remove all the complex before/after elements */
+.MuiTab-root::before, 
+.MuiTab-root::after,
+.MuiTab-root.Mui-selected::before, 
+.MuiTab-root.Mui-selected::after {
+  display: none !important;
+}
+
+/* Tab labels */
+.MuiTab-root .MuiTab-wrapper {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Force hide scroll buttons */
+.MuiTabs-scrollButtons {
+  display: none !important;
+}
+
+.MuiTabs-flexContainer {
+  justify-content: center !important;
+  width: 100% !important;
+  margin-top: 10px !important; /* Increase top margin */
+  padding-top: 5px !important; /* Add padding at top for hover animation */
+}
+
+@keyframes slideInLeft {
+  0% {
+    transform: translateX(-50px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInRight {
+  0% {
+    transform: translateX(50px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes glitchAnimation {
+  0% {
+    transform: translate(0);
+  }
+  20% {
+    transform: translate(-2px, 2px);
+  }
+  40% {
+    transform: translate(-2px, -2px);
+  }
+  60% {
+    transform: translate(2px, 2px);
+  }
+  80% {
+    transform: translate(2px, -2px);
+  }
+  100% {
+    transform: translate(0);
+  }
+}
+
+@keyframes fadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes typingCursor {
+  0%, 100% {
+    border-right-color: transparent;
+  }
+  50% {
+    border-right-color: #92E643;
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    left: 100%;
+  }
+}
+
+/* Component animation classes */
+.tab-content {
+  animation: fadeUp 0.5s ease-out forwards;
+}
+
+/* Button base styling */
+.MuiButton-root {
+  position: relative !important;
+  background-color: #0e0e0e !important; /* Solid color */
+  color: #92E643 !important;
+  border: 1px solid #92E643 !important;
+  border-radius: 4px !important;
+  font-family: 'Press Start 2P', cursive !important;
+  font-size: 0.75rem !important;
+  letter-spacing: 0.5px !important;
+  text-transform: uppercase !important;
+  padding: 10px 20px !important;
+  margin: 5px !important;
+  transition: all 0.2s ease !important;
+  box-shadow: none !important; /* No shadow by default */
+}
+
+/* Hover state - subtle */
+.MuiButton-root:hover {
+  background-color: #131313 !important; /* Slightly lighter solid color */
+  border-color: #92E643 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Active state */
+.MuiButton-root:active {
+  transform: translateY(1px) !important;
+  box-shadow: none !important;
+}
+
+/* Primary button styling - solid color */
+.MuiButton-containedPrimary {
+  background-color: #92E643 !important; /* Solid color */
+  color: #000 !important;
+  font-weight: bold !important;
+  border: none !important;
+}
+
+.MuiButton-containedPrimary:hover {
+  background-color: #92E643 !important; /* Keep the same solid color on hover */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* DISABLED STATE - VERY CLEAR */
+.MuiButton-root.Mui-disabled {
+  background-color: #1a1a1a !important; /* Darker background */
+  color: #555555 !important; /* Grey text */
+  border-color: #444444 !important; /* Grey border */
+  cursor: not-allowed !important;
+  opacity: 0.7 !important; 
+  box-shadow: none !important;
+  transform: none !important;
+  pointer-events: none !important;
+}
+
+.MuiButton-containedPrimary.Mui-disabled {
+  background-color: #394527 !important; /* Darker version of green */
+  color: #636363 !important;
+  opacity: 0.7 !important;
+}
+
+/* Wallet button - solid color */
+.wallet-button {
+  background-color: #0e0e0e !important; /* Solid color */
+  font-size: 1rem !important;
+  letter-spacing: 0.5px !important;
+  padding: 10px 16px !important;
+  border: 1px solid #92E643 !important;
+}
+
+.wallet-button:hover {
+  background-color: #131313 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Clean up any previous styling */
+.MuiButton-root::before,
+.MuiButton-root::after,
+.MuiButton-root:hover::before,
+.MuiButton-root:hover::after {
+  display: none !important;
+}
+
+/* Icon buttons */
+.MuiIconButton-root {
+  color: #92E643 !important;
+  background-color: transparent !important;
+}
+
+.MuiIconButton-root:hover {
+  color: #ffffff !important;
+  background-color: rgba(146, 230, 67, 0.1) !important;
+}
+
+.MuiIconButton-root.Mui-disabled {
+  color: #555555 !important;
+  opacity: 0.7 !important;
+}
+
+/* Wallet specific styling */
+.wallet-button {
+  background-image: linear-gradient(to right, rgba(10, 10, 10, 0.9), rgba(20, 20, 20, 0.9)) !important;
+  font-family: 'Press Start 2P', cursive !important;
+  font-size: 0.75rem !important;
+  box-shadow: inset 0 0 20px rgba(146, 230, 67, 0.1), 0 0 5px rgba(146, 230, 67, 0.5) !important;
+  letter-spacing: 1px !important;
+}
+
+.wallet-button:hover {
+  letter-spacing: 1.5px !important;
+  box-shadow: inset 0 0 30px rgba(146, 230, 67, 0.2), 0 0 10px rgba(146, 230, 67, 0.8) !important;
+}
+
+/* Remove the before/after corner elements on buttons */
+.MuiButton-root::before, 
+.MuiButton-root::after {
+  display: none;
+}
+
+/* Card animations */
+.glowing-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.glowing-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #92E643, transparent);
+  opacity: 0.7;
+}
+
+.glowing-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at center, transparent 99%, rgba(146, 230, 67, 0.1));
+  z-index: 0;
+  opacity: 0.3;
+}
+
+/* Add these new styles to the end of the file */
+
+/* Terminal card styling */
+.terminal-card {
+  position: relative;
+}
+
+.terminal-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.15),
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.3;
+}
+
+/* Scan effect */
+.scan-effect {
+  overflow: hidden;
+}
+
+.scan-effect::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  background: rgba(146, 230, 67, 0.3);
+  animation: scanning 4s linear infinite;
+}
+
+@keyframes scanning {
+  0% {
+    top: 0%;
+  }
+  100% {
+    top: 100%;
+  }
+}
+
+/* Blinking cursor effect for titles */
+.blinking-cursor::after {
+  content: '|';
+  margin-left: 5px;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Matrix animation for background elements */
+.matrix-bg {
+  position: relative;
+  overflow: hidden;
+}
+
+
+/* Button animations enhanced */
+.MuiButton-root:hover {
+  text-shadow: 0 0 5px rgba(146, 230, 67, 0.8);
+  letter-spacing: 1px;
+}
+
+/* Custom checkboxes */
+.MuiCheckbox-root {
+  color: rgba(146, 230, 67, 0.5);
+}
+
+.MuiCheckbox-root.Mui-checked {
+  color: #92E643;
+}
+
+/* Paper components */
+.MuiPaper-root {
+  background-color: rgba(16, 16, 16, 0.95);
+  border: 1px solid rgba(146, 230, 67, 0.2);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+}
+
+/* Dialog components */
+.MuiDialog-paper {
+  background-image: 
+    linear-gradient(45deg, rgba(146, 230, 67, 0.05) 25%, transparent 25%), 
+    linear-gradient(-45deg, rgba(146, 230, 67, 0.05) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(146, 230, 67, 0.05) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(146, 230, 67, 0.05) 75%);
+  background-size: 20px 20px;
+  border: 1px solid rgba(146, 230, 67, 0.3) !important;
+  box-shadow: 0 0 25px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(146, 230, 67, 0.2) !important;
+}
+
+/* Custom alert styles */
+.MuiAlert-root {
+  background-color: rgba(10, 10, 10, 0.9) !important;
+  border-left: 4px solid;
+  border-radius: 2px !important;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.75rem !important; /* Increase from 0.7rem */
+}
+
+.MuiAlert-standardSuccess {
+  border-color: #92E643 !important;
+}
+
+.MuiAlert-standardError {
+  border-color: #ff3d00 !important;
+}
+
+.MuiAlert-standardWarning {
+  border-color: #ffc107 !important;
+}
+
+.MuiAlert-standardInfo {
+  border-color: #29b6f6 !important;
+}
+
+/* Custom progress indicators */
+.MuiLinearProgress-root {
+  height: 8px !important;
+  border-radius: 4px !important;
+  background-color: rgba(0, 0, 0, 0.3) !important;
+  border: 1px solid rgba(146, 230, 67, 0.2) !important;
+  overflow: hidden;
+}
+
+.MuiLinearProgress-bar {
+  background-image: linear-gradient(90deg, #92E643, #39ff14) !important;
+  box-shadow: 0 0 10px rgba(146, 230, 67, 0.5) !important;
+}
+
+.MuiCircularProgress-circle {
+  stroke: #92E643 !important;
+}
+
+/* Custom table styling */
+.MuiTable-root {
+  border-collapse: separate !important;
+  border-spacing: 0 4px !important;
+  background-color: transparent !important;
+}
+
+.MuiTableRow-root {
+  transition: all 0.3s ease;
+}
+
+.MuiTableRow-root:hover {
+  background-color: rgba(146, 230, 67, 0.05) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Add glitch effect */
+.glitch-text {
+  position: relative;
+  display: inline-block;
+}
+
+.glitch-text:hover::before, .glitch-text:hover::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.8;
+}
+
+.glitch-text:hover::before {
+  color: #ff00ff;
+  animation: glitch 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both infinite;
+  clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
+  transform: translate(-2px, -2px);
+}
+
+.glitch-text:hover::after {
+  color: #00ffff;
+  animation: glitch 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) reverse both infinite;
+  clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
+  transform: translate(2px, 2px);
+}
+
+@keyframes glitch {
+  0% {transform: translate(0);}
+  20% {transform: translate(-2px, 2px);}
+  40% {transform: translate(-2px, -2px);}
+  60% {transform: translate(2px, 2px);}
+  80% {transform: translate(2px, -2px);}
+  100% {transform: translate(0);}
+}
+
+/* Cyberpunk backgrounds for various components */
+.cyberpunk-bg {
+  background-color: rgba(10, 10, 10, 0.9) !important;
+  background-image: radial-gradient(rgba(146, 230, 67, 0.05) 1px, transparent 1px) !important;
+  background-size: 20px 20px !important;
+  position: relative !important;
+}
+
+.cyberpunk-grid-bg {
+  background-color: rgba(10, 10, 10, 0.9) !important;
+  background-image: 
+    linear-gradient(rgba(146, 230, 67, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(146, 230, 67, 0.03) 1px, transparent 1px) !important;
+  background-size: 20px 20px !important;
+  position: relative !important;
+}
+
+.cyberpunk-card {
+  border-radius: 8px !important;
+  border: 1px solid rgba(146, 230, 67, 0.3) !important;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5) !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+.cyberpunk-card::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 2px !important;
+  background: linear-gradient(90deg, transparent, #92E643, transparent) !important;
+  opacity: 0.7 !important;
+}
+
+/* Dialog component text */
+.MuiDialog-paper .MuiDialogTitle-root {
+  font-size: 0.8rem !important;
+}
+
+.MuiDialog-paper .MuiDialogContentText-root {
+  font-size: 0.75rem !important;
+}
+
+/* Form labels */
+.MuiFormLabel-root, .MuiInputLabel-root {
+  font-size: 0.75rem !important; /* Increase from 0.7rem */
+}
+
+/* Table cells */
+.MuiTableCell-head {
+  font-size: 0.7rem !important; /* Increase from 0.6rem */
+}
+
+.MuiTableCell-body {
+  font-size: 0.75rem !important;
+}
+
+/* Typography variants - ensure these match your theme */
+h1, .MuiTypography-h1 {
+  font-size: 2.5rem !important; /* Match theme */
+}
+
+h2, .MuiTypography-h2 {
+  font-size: 1.3rem !important; /* Match theme */
+}
+
+.MuiTypography-body1 {
+  font-size: 0.8rem !important; /* Match theme */
+}
+
+.MuiTypography-body2 {
+  font-size: 0.75rem !important; /* Slightly increase from 0.7rem */
+}
+
+/* Retro Pixelated Input Fields - Simplified */
+
+/* Ensure wallet dropdown appears on top of everything */
+.wallet-adapter-dropdown {
+  position: relative !important;
+  z-index: 99999 !important; /* Very high z-index to ensure it's on top */
+}
+
+.wallet-adapter-dropdown-list {
+  position: absolute !important;
+  z-index: 99999 !important; /* Even higher z-index for the dropdown list */
+  background-color: rgba(10, 10, 10, 0.95) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(146, 230, 67, 0.3) !important;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), 0 0 10px rgba(146, 230, 67, 0.2) !important;
+}
+
+.wallet-adapter-dropdown-list-item {
+  background-color: transparent !important;
+  transition: all 0.2s ease !important;
+  color: #92E643 !important;
+  font-family: 'Press Start 2P', cursive !important;
+  font-size: 0.7rem !important;
+  padding: 10px 20px !important;
+}
+
+.wallet-adapter-dropdown-list-item:hover {
+  background-color: rgba(146, 230, 67, 0.1) !important;
+  box-shadow: inset 0 0 5px rgba(146, 230, 67, 0.2) !important;
+}
+
+/* Make sure the wallet button itself has a good z-index */
+.wallet-button {
+  z-index: 9999 !important;
+  position: relative !important;
+}
+

@@ -18,6 +18,7 @@ import {
   Select,
   InputLabel,
   FormControl,
+  Paper,
 } from "@mui/material";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Connection, clusterApiUrl, Transaction } from "@solana/web3.js";
@@ -110,6 +111,37 @@ function CustomStepIcon(props) {
     </CustomStepIconRoot>
   );
 }
+
+const ChaosPaper = styled(Paper)(({ theme }) => ({
+  padding: '20px',
+  backgroundColor: 'rgba(10, 10, 10, 0.9)',
+  color: '#fff',
+  border: '1px solid rgba(146, 230, 67, 0.3)',
+  borderRadius: '10px',
+  boxShadow: '0 5px 20px rgba(0, 0, 0, 0.5)',
+  position: 'relative',
+  overflow: 'hidden',
+  backgroundImage: 'radial-gradient(rgba(146, 230, 67, 0.03) 1px, transparent 1px)',
+  backgroundSize: '20px 20px',
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '2px',
+    background: 'linear-gradient(90deg, transparent, #92E643, transparent)',
+    opacity: 0.7,
+  },
+  '& .MuiTableCell-root': {
+    color: '#fff',
+    borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
+  },
+  '& .MuiTableHead-root .MuiTableCell-root': {
+    backgroundColor: 'rgba(146, 230, 67, 0.1)',
+    fontWeight: 'bold',
+  }
+}));
 
 const CoinCreator = () => {
   const { connected, publicKey, signTransaction } = useWallet();
@@ -645,6 +677,7 @@ const CoinCreator = () => {
   };
 
   return (
+    <ChaosPaper>
     <Box>
       <Typography variant="h5" sx={{ color: '#92E643' }}>Create a new token</Typography>
       <Stepper 
@@ -704,6 +737,7 @@ const CoinCreator = () => {
         </Typography>
       )}
     </Box>
+    </ChaosPaper>
   );
 };
 
