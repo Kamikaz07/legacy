@@ -83,15 +83,39 @@ const WalletManager = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [walletsToCreate, setWalletsToCreate] = useState(30);
+  const [tokenPage, setTokenPage] = useState(0);
+  const [hasMoreTokens, setHasMoreTokens] = useState(true);
+  const [loadingMoreTokens, setLoadingMoreTokens] = useState(false);
+  const [walletPage, setWalletPage] = useState(0);
+  const [hasMoreWallets, setHasMoreWallets] = useState(true);
+  const [loadingMoreWallets, setLoadingMoreWallets] = useState(false);
 
   // Função para buscar tokens da carteira mestra
-  const fetchMasterTokens = async () => {
+  const fetchMasterTokens = async (nextPage = 0) => {
     if (!publicKey) return;
+    
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/master-tokens/${publicKey.toString()}`);
-      setMasterTokens(response.data.tokens);
+      setLoadingMoreTokens(true);
+      
+      const response = await axios.get(
+        `${process.env.REACT_APP_API_URL}/api/master-tokens/${publicKey.toString()}`,
+        { params: { page: nextPage, pageSize: 20 } }
+      );
+      
+      // If this is the first page, replace tokens. Otherwise append
+      if (nextPage === 0) {
+        setMasterTokens(response.data.tokens);
+      } else {
+        setMasterTokens(prev => [...prev, ...response.data.tokens]);
+      }
+      
+      // Update pagination state
+      setTokenPage(nextPage);
+      setHasMoreTokens(response.data.pagination?.hasMore || false);
     } catch (error) {
       console.error('Failed to fetch master tokens:', error);
+    } finally {
+      setLoadingMoreTokens(false);
     }
   };
 
@@ -101,23 +125,40 @@ const WalletManager = () => {
 
   // Carregar carteiras ao montar o componente
   useEffect(() => {
-    fetchWallets();
+    fetchWallets(0); // Reset to first page
   }, []);
 
   // Função para buscar carteiras existentes
-  const fetchWallets = async () => {
+  const fetchWallets = async (nextPage = 0) => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/wallets`);
-      if (response.data.wallets && response.data.wallets.length > 0) {
+      setLoadingMoreWallets(nextPage > 0);
+      
+      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/wallets`, {
+        params: { page: nextPage, pageSize: 20 }
+      });
+      
+      // If this is the first page, replace wallets. Otherwise append
+      if (nextPage === 0) {
         setWallets(response.data.wallets);
-        setWalletStats({
-          ...walletStats,
-          totalWallets: response.data.wallets.length,
-          fromDatabase: true
-        });
+      } else {
+        setWallets(prev => [...prev, ...response.data.wallets]);
       }
+      
+      // Update wallet stats
+      setWalletStats({
+        ...walletStats,
+        totalWallets: response.data.pagination?.total || response.data.wallets.length,
+        fromDatabase: response.data.wallets.length > 0
+      });
+      
+      // Update pagination state
+      setWalletPage(nextPage);
+      setHasMoreWallets(response.data.pagination?.hasMore || false);
     } catch (error) {
       console.error('Failed to fetch wallets:', error);
+      setError('Failed to load wallets: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setLoadingMoreWallets(false);
     }
   };
 
@@ -252,7 +293,7 @@ const WalletManager = () => {
       }
       
       // Buscar carteiras atualizadas
-      fetchWallets();
+      fetchWallets(0); // Reset to first page
     } catch (error) {
       console.error('Erro completo:', error);
       setError('Failed to fund wallets: ' + (error.response?.data?.error || error.message));
@@ -395,7 +436,7 @@ const WalletManager = () => {
       }
       
       // Buscar carteiras atualizadas
-      fetchWallets();
+      fetchWallets(0); // Reset to first page
       // Atualizar tokens mestre para refletir o novo saldo
       fetchMasterTokens();
     } catch (error) {
@@ -524,7 +565,7 @@ const WalletManager = () => {
       }
       
       // Refresh wallets and master tokens to show updated balances
-      fetchWallets();
+      fetchWallets(0); // Reset to first page
       fetchMasterTokens();
     } catch (error) {
       setError('Failed to collect assets: ' + (error.response?.data?.error || error.message || 'Unknown error'));
@@ -621,7 +662,7 @@ const WalletManager = () => {
       }
       
       // Refresh wallets to show updated balances
-      fetchWallets();
+      fetchWallets(0); // Reset to first page
     } catch (error) {
       setError('Failed to collect SOL: ' + (error.response?.data?.error || error.message || 'Unknown error'));
       console.error('Collect SOL error:', error);
@@ -795,6 +836,20 @@ const WalletManager = () => {
     return wallet.tokens.filter(t => t.amount > 0).length;
   };
 
+  // Add a loadMoreTokens function
+  const loadMoreTokens = () => {
+    if (hasMoreTokens && !loadingMoreTokens) {
+      fetchMasterTokens(tokenPage + 1);
+    }
+  };
+
+  // Add a loadMoreWallets function
+  const loadMoreWallets = () => {
+    if (hasMoreWallets && !loadingMoreWallets) {
+      fetchWallets(walletPage + 1);
+    }
+  };
+
   return (
     <ChaosPaper>
       <Box sx={{ mb: 4 }}>
@@ -837,7 +892,7 @@ const WalletManager = () => {
         {/* Área para adicionar SOL */}
         <Paper sx={{ p: 3, mb: 3, backgroundColor: 'rgba(0, 0, 0, 0.3)', borderRadius: 2 }}>
           <Typography variant="h6" gutterBottom sx={{ color: '#92E643' }}>
-            Add SOL
+            Send/Collect SOL
           </Typography>
           
           <Box sx={{ 
@@ -868,7 +923,7 @@ const WalletManager = () => {
               disabled={loading || !publicKey || wallets.length === 0 || parseFloat(solAmount) <= 0}
               startIcon={loading && <CircularProgress size={20} />}
             >
-              Drip SOL
+              Send SOL
             </ActionButton>
             <ActionButton 
               variant="contained" 
@@ -884,7 +939,7 @@ const WalletManager = () => {
         {/* Área para comprar tokens */}
         <Paper sx={{ p: 3, mb: 3, backgroundColor: 'rgba(0, 0, 0, 0.3)', borderRadius: 2 }}>
           <Typography variant="h6" gutterBottom sx={{ color: '#92E643' }}>
-            Buy/Sell Tokens
+          Send/Collect Tokens
           </Typography>
           
           <Box sx={{ mb: 2 }}>
@@ -973,7 +1028,7 @@ const WalletManager = () => {
                 disabled={loading || wallets.length === 0 || !selectedToken || parseFloat(tokenPercentage) <= 0}
                 startIcon={loading && <CircularProgress size={20} />}
               >
-                Buy Tokens
+                Send Tokens
               </ActionButton>
               <ActionButton 
                 variant="contained" 
@@ -984,6 +1039,27 @@ const WalletManager = () => {
                 Collect Tokens
               </ActionButton>
             </Box>
+            {masterTokens.length > 0 && (
+              <Box sx={{ mt: 2, textAlign: 'center' }}>
+                <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#92E643' }}>
+                  {masterTokens.length} tokens loaded
+                </Typography>
+                {hasMoreTokens && (
+                  <ActionButton
+                    size="small"
+                    variant="outlined"
+                    onClick={loadMoreTokens}
+                    disabled={loadingMoreTokens}
+                    sx={{ mt: 1 }}
+                  >
+                    {loadingMoreTokens ? (
+                      <CircularProgress size={16} sx={{ mr: 1 }} />
+                    ) : null}
+                    Load More Tokens
+                  </ActionButton>
+                )}
+              </Box>
+            )}
           </Box>
         </Paper>
         
@@ -1247,6 +1323,19 @@ const WalletManager = () => {
                 },
               }}
             />
+            {hasMoreWallets && (
+              <Box sx={{ textAlign: 'center', py: 2, borderTop: '1px solid rgba(146, 230, 67, 0.2)' }}>
+                <ActionButton
+                  size="small"
+                  variant="outlined"
+                  onClick={loadMoreWallets}
+                  disabled={loadingMoreWallets}
+                  startIcon={loadingMoreWallets && <CircularProgress size={16} />}
+                >
+                  Load More Wallets
+                </ActionButton>
+              </Box>
+            )}
           </Box>
         </Paper>
       </Box>
