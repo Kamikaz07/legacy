@@ -90,30 +90,53 @@ const WalletManager = () => {
   const [hasMoreWallets, setHasMoreWallets] = useState(true);
   const [loadingMoreWallets, setLoadingMoreWallets] = useState(false);
 
-  // Função para buscar tokens da carteira mestra
-  const fetchMasterTokens = async (nextPage = 0) => {
+  // Função modificada para buscar tokens da carteira mestra com retentativas
+  const fetchMasterTokens = async (nextPage = 0, retryCount = 0) => {
     if (!publicKey) return;
     
     try {
-      setLoadingMoreTokens(true);
+      setLoadingMoreTokens(nextPage > 0);
       
+      console.log(`Buscando tokens para ${publicKey.toString()} (página ${nextPage})`);
+      
+      // Adicionar timeout maior para evitar rejeição prematura
       const response = await axios.get(
         `${process.env.REACT_APP_API_URL}/api/master-tokens/${publicKey.toString()}`,
-        { params: { page: nextPage, pageSize: 20 } }
+        { 
+          params: { page: nextPage, pageSize: 10 }, // Reduzido para 10 tokens por página
+          timeout: 10000 // Timeout de 10 segundos
+        }
       );
       
-      // If this is the first page, replace tokens. Otherwise append
+      // Se a resposta indicar que os tokens ainda estão carregando, tentar novamente após delay
+      if (response.data.pagination?.loading) {
+        console.log("Tokens ainda carregando, tentando novamente em 3 segundos...");
+        setTimeout(() => fetchMasterTokens(nextPage, retryCount), 3000);
+        return;
+      }
+      
+      // Se este é a primeira página, substituir tokens. Caso contrário, adicionar
       if (nextPage === 0) {
         setMasterTokens(response.data.tokens);
       } else {
         setMasterTokens(prev => [...prev, ...response.data.tokens]);
       }
       
-      // Update pagination state
+      // Atualizar estado de paginação
       setTokenPage(nextPage);
       setHasMoreTokens(response.data.pagination?.hasMore || false);
     } catch (error) {
       console.error('Failed to fetch master tokens:', error);
+      
+      // Adicionar lógica de retentativa automática para erros de timeout (408, 504)
+      if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
+        console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
+        setTimeout(() => fetchMasterTokens(nextPage, retryCount + 1), 2000);
+      } else if (retryCount >= 3) {
+        // Limite de tentativas atingido, mostrar tokens vazios e não quebrar a interface
+        setMasterTokens(prevTokens => nextPage === 0 ? [] : prevTokens);
+        setHasMoreTokens(false);
+      }
     } finally {
       setLoadingMoreTokens(false);
     }
@@ -128,35 +151,48 @@ const WalletManager = () => {
     fetchWallets(0); // Reset to first page
   }, []);
 
-  // Função para buscar carteiras existentes
-  const fetchWallets = async (nextPage = 0) => {
+  // Função modificada para buscar carteiras com retentativas
+  const fetchWallets = async (nextPage = 0, retryCount = 0) => {
     try {
       setLoadingMoreWallets(nextPage > 0);
       
+      console.log(`Buscando carteiras (página ${nextPage})`);
+      
       const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/wallets`, {
-        params: { page: nextPage, pageSize: 20 }
+        params: { page: nextPage, pageSize: 10 }, // Reduzido para 10 carteiras por página
+        timeout: 10000 // Timeout de 10 segundos
       });
       
-      // If this is the first page, replace wallets. Otherwise append
+      // Se este é a primeira página, substituir carteiras. Caso contrário, adicionar
       if (nextPage === 0) {
-        setWallets(response.data.wallets);
+        setWallets(response.data.wallets || []);
       } else {
-        setWallets(prev => [...prev, ...response.data.wallets]);
+        setWallets(prev => [...prev, ...(response.data.wallets || [])]);
       }
       
-      // Update wallet stats
+      // Atualizar estatísticas de carteiras
       setWalletStats({
         ...walletStats,
-        totalWallets: response.data.pagination?.total || response.data.wallets.length,
-        fromDatabase: response.data.wallets.length > 0
+        totalWallets: response.data.pagination?.total || response.data.wallets?.length || 0,
+        fromDatabase: (response.data.wallets?.length || 0) > 0
       });
       
-      // Update pagination state
+      // Atualizar estado de paginação
       setWalletPage(nextPage);
       setHasMoreWallets(response.data.pagination?.hasMore || false);
     } catch (error) {
       console.error('Failed to fetch wallets:', error);
-      setError('Failed to load wallets: ' + (error.response?.data?.error || error.message));
+      
+      // Adicionar lógica de retentativa automática para erros de timeout (408, 504)
+      if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
+        console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
+        setTimeout(() => fetchWallets(nextPage, retryCount + 1), 2000);
+      } else if (retryCount >= 3) {
+        // Limite de tentativas atingido, mostrar mensagem de erro e não quebrar a interface
+        setError('Não foi possível carregar as carteiras. Servidor com alta demanda, tente novamente mais tarde.');
+        setWallets(prevWallets => nextPage === 0 ? [] : prevWallets);
+        setHasMoreWallets(false);
+      }
     } finally {
       setLoadingMoreWallets(false);
     }
@@ -673,29 +709,39 @@ const WalletManager = () => {
   };
 
   // Função para atualizar saldos no banco de dados
-  const updateBalancesInDatabase = async () => {
+  const updateBalancesInDatabase = async (retryCount = 0) => {
+    if (wallets.length === 0) {
+      return;
+    }
+    
     try {
-      // Primeiro, buscar os saldos reais na blockchain para garantir precisão
-      const connection = new Connection(process.env.REACT_APP_SOLANA_RPC || "https://api.devnet.solana.com");
-      const addresses = wallets.map(w => w.address);
-      const solBalances = [];
-      const tokenBalances = wallets.map(w => w.tokenBalance);
-
       setSuccessMessage("Consultando saldos de SOL na blockchain...");
-      console.log("Buscando saldos para", addresses.length, "carteiras");
+      console.log("Buscando saldos para", wallets.length, "carteiras");
+      
+      const addresses = wallets.map(w => w.address);
       
       // Buscar saldos de SOL atualizados da blockchain em lotes para evitar muitas requisições
-      const QUERY_BATCH_SIZE = 5;
+      const QUERY_BATCH_SIZE = 5; // Reduzido para 5
+      const solBalances = [];
+      
       for (let i = 0; i < addresses.length; i += QUERY_BATCH_SIZE) {
         const batchAddresses = addresses.slice(i, i + QUERY_BATCH_SIZE);
         const progress = Math.floor((i / addresses.length) * 100);
         setProgressValue(progress);
         
-        // Processar cada endereço no lote
+        // Processar cada endereço no lote com timeout individual
         const batchPromises = batchAddresses.map(async (address) => {
           try {
             const publicKey = new PublicKey(address);
-            const balance = await connection.getBalance(publicKey);
+            
+            // Uso do Promise.race para limitar o tempo de espera da consulta
+            const balance = await Promise.race([
+              connection.getBalance(publicKey),
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Balance fetch timeout')), 5000)
+              )
+            ]);
+            
             return balance / 1e9; // Converter lamports para SOL
           } catch (err) {
             console.error(`Error fetching balance for ${address}:`, err);
@@ -703,37 +749,40 @@ const WalletManager = () => {
           }
         });
         
-        // Aguardar todos no lote antes de continuar
         const batchResults = await Promise.all(batchPromises);
         solBalances.push(...batchResults);
+        
+        // Pequena pausa entre lotes para evitar rate limiting
+        if (i + QUERY_BATCH_SIZE < addresses.length) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
       }
       
       setProgressValue(100);
-      setSuccessMessage("Saldos consultados. Atualizando banco de dados...");
       
-      console.log("Saldos encontrados:", solBalances);
-      
-      // Enviar para o backend
-      const result = await axios.post(`${process.env.REACT_APP_API_URL}/api/update-balances`, {
+      // Enviar saldos atualizados para o backend
+      console.log("Enviando saldos para o servidor...");
+      await axios.post(`${process.env.REACT_APP_API_URL}/api/update-balances`, {
         addresses,
-        solBalances,
-        tokenBalances
+        solBalances
+      }, {
+        timeout: 10000 // 10 segundos de timeout
       });
       
-      console.log("Resposta do backend:", result.data);
-      
-      // Atualizar o estado local com os novos saldos
-      const updatedWallets = wallets.map((wallet, index) => ({
-        ...wallet,
-        solBalance: solBalances[index]
-      }));
-      
-      setWallets(updatedWallets);
-      
-      console.log('Balances updated in database with real blockchain data');
-      return true;
+      setSuccessMessage("Saldos de SOL atualizados com sucesso!");
+      console.log("Balances updated in database");
     } catch (error) {
       console.error('Failed to update balances in database:', error);
+      
+      // Adicionar lógica de retentativa automática para erros de timeout (408, 504)
+      if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 2) {
+        console.log(`Timeout ao atualizar saldos, tentando novamente (${retryCount + 1}/2)...`);
+        setSuccessMessage(`Timeout ao atualizar saldos. Tentando novamente (${retryCount + 1}/2)...`);
+        return updateBalancesInDatabase(retryCount + 1);
+      }
+      
+      // Se houve erro mesmo com retentativas, propagar para o chamador
+      setError('Erro ao atualizar saldos: ' + (error.response?.data?.error || error.message));
       throw error;
     }
   };
@@ -851,6 +900,7 @@ const WalletManager = () => {
   };
 
   return (
+    <>
     <ChaosPaper>
       <Box sx={{ mb: 4 }}>
         <Typography variant="h5" gutterBottom sx={{ color: '#92E643', fontWeight: 'bold' }}>
@@ -858,33 +908,33 @@ const WalletManager = () => {
         </Typography>
 
         {/* Área de criação de carteiras */}
-        <Box sx={{ 
-          display: 'flex', 
-          flexDirection: { xs: 'column', sm: 'row' }, 
+        <Box sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
           gap: 2,
           alignItems: 'flex-start',
           mb: 3
         }}>
-          <ActionButton 
-            variant="contained" 
+          <ActionButton
+            variant="contained"
             onClick={generateWallets}
             disabled={loading || !publicKey}
             startIcon={loading && <CircularProgress size={20} />}
           >
             Create 30 Wallets
           </ActionButton>
-          
-          <Typography 
-            variant="body2" 
-            sx={{ 
-              color: '#92E643', 
+
+          <Typography
+            variant="body2"
+            sx={{
+              color: '#92E643',
               mt: 1,
               display: 'flex',
               alignItems: 'center'
             }}
           >
-            {walletStats.totalWallets > 0 ? 
-              `Wallets: ${walletStats.totalWallets}` : 
+            {walletStats.totalWallets > 0 ?
+              `Wallets: ${walletStats.totalWallets}` :
               "No wallets created"}
           </Typography>
         </Box>
@@ -894,13 +944,13 @@ const WalletManager = () => {
           <Typography variant="h6" gutterBottom sx={{ color: '#92E643' }}>
             Send/Collect SOL
           </Typography>
-          
-          <Box sx={{ 
-            display: 'flex', 
+
+          <Box sx={{
+            display: 'flex',
             flexDirection: { xs: 'column', sm: 'row' },
             alignItems: { xs: 'flex-start', sm: 'center' },
             gap: 2,
-            mb: 2 
+            mb: 2
           }}>
             <TextField
               type="number"
@@ -915,18 +965,17 @@ const WalletManager = () => {
                   '& fieldset': { borderColor: '#92E643' },
                 },
                 '& .MuiInputLabel-root': { color: '#92E643' },
-              }}
-            />
-            <ActionButton 
-              variant="contained" 
+              }} />
+            <ActionButton
+              variant="contained"
               onClick={fundWallets}
               disabled={loading || !publicKey || wallets.length === 0 || parseFloat(solAmount) <= 0}
               startIcon={loading && <CircularProgress size={20} />}
             >
               Send SOL
             </ActionButton>
-            <ActionButton 
-              variant="contained" 
+            <ActionButton
+              variant="contained"
               onClick={collectSol}
               disabled={loading || !publicKey || wallets.length === 0}
               startIcon={loading && <CircularProgress size={20} />}
@@ -939,14 +988,14 @@ const WalletManager = () => {
         {/* Área para comprar tokens */}
         <Paper sx={{ p: 3, mb: 3, backgroundColor: 'rgba(0, 0, 0, 0.3)', borderRadius: 2 }}>
           <Typography variant="h6" gutterBottom sx={{ color: '#92E643' }}>
-          Send/Collect Tokens
+            Send/Collect Tokens
           </Typography>
-          
+
           <Box sx={{ mb: 2 }}>
-            <FormControl 
+            <FormControl
               fullWidth
-              variant="outlined" 
-              sx={{ 
+              variant="outlined"
+              sx={{
                 mb: 2,
                 '& .MuiOutlinedInput-root': {
                   color: '#fff',
@@ -985,9 +1034,9 @@ const WalletManager = () => {
                 ))}
               </Select>
             </FormControl>
-            
-            <Box sx={{ 
-              display: 'flex', 
+
+            <Box sx={{
+              display: 'flex',
               flexDirection: { xs: 'column', sm: 'row' },
               alignItems: { xs: 'flex-start', sm: 'center' },
               gap: 2
@@ -1007,7 +1056,7 @@ const WalletManager = () => {
                   } else {
                     setTokenPercentage(e.target.value);
                   }
-                }}
+                } }
                 size="small"
                 InputProps={{
                   endAdornment: <InputAdornment position="end">%</InputAdornment>,
@@ -1020,18 +1069,17 @@ const WalletManager = () => {
                   },
                   '& .MuiInputLabel-root': { color: '#92E643' },
                   '& .MuiInputAdornment-root': { color: '#92E643' },
-                }}
-              />
-              <ActionButton 
-                variant="contained" 
+                }} />
+              <ActionButton
+                variant="contained"
                 onClick={buyTokens}
                 disabled={loading || wallets.length === 0 || !selectedToken || parseFloat(tokenPercentage) <= 0}
                 startIcon={loading && <CircularProgress size={20} />}
               >
                 Send Tokens
               </ActionButton>
-              <ActionButton 
-                variant="contained" 
+              <ActionButton
+                variant="contained"
                 onClick={sellAllTokens}
                 disabled={!selectedToken || loading}
                 startIcon={loading && <CircularProgress size={20} />}
@@ -1062,11 +1110,11 @@ const WalletManager = () => {
             )}
           </Box>
         </Paper>
-        
+
         {/* Verificar saldos */}
         <Box sx={{ mb: 3 }}>
-          <ActionButton 
-            variant="outlined" 
+          <ActionButton
+            variant="outlined"
             onClick={verifyBalances}
             disabled={loading || wallets.length === 0}
             fullWidth
@@ -1090,9 +1138,9 @@ const WalletManager = () => {
 
         {isProcessing && (
           <Box sx={{ width: '100%', mb: 2 }}>
-            <LinearProgress 
-              variant="determinate" 
-              value={progressValue} 
+            <LinearProgress
+              variant="determinate"
+              value={progressValue}
               sx={{
                 height: 10,
                 borderRadius: 5,
@@ -1101,8 +1149,7 @@ const WalletManager = () => {
                   backgroundColor: '#92E643',
                   borderRadius: 5,
                 }
-              }}
-            />
+              }} />
             <Typography variant="caption" sx={{ color: '#92E643', mt: 1 }}>
               {progressValue}% Complete
             </Typography>
@@ -1111,38 +1158,38 @@ const WalletManager = () => {
       </Box>
 
       <Box sx={{ overflowX: 'auto' }}>
-        <Paper 
-          sx={{ 
-            width: '100%', 
+        <Paper
+          sx={{
+            width: '100%',
             overflow: 'hidden',
             backgroundColor: 'rgba(0, 0, 0, 0.3)',
             borderRadius: 2
           }}
         >
-          <Typography 
-            variant="h6" 
-            sx={{ 
-              p: 2, 
-              color: '#92E643', 
-              borderBottom: '1px solid rgba(146, 230, 67, 0.2)' 
+          <Typography
+            variant="h6"
+            sx={{
+              p: 2,
+              color: '#92E643',
+              borderBottom: '1px solid rgba(146, 230, 67, 0.2)'
             }}
           >
             Wallet List
           </Typography>
-          
+
           <Box>
             <Table aria-label="shadow wallets table" size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ 
-                    fontWeight: 'bold', 
+                  <TableCell sx={{
+                    fontWeight: 'bold',
                     color: '#92E643',
                     borderBottom: '1px solid rgba(146, 230, 67, 0.2)'
                   }}>
                     Address
                   </TableCell>
-                  <TableCell sx={{ 
-                    fontWeight: 'bold', 
+                  <TableCell sx={{
+                    fontWeight: 'bold',
                     color: '#92E643',
                     borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
                     width: '80px',
@@ -1150,14 +1197,14 @@ const WalletManager = () => {
                   }}>
                     SOL
                   </TableCell>
-                  <TableCell align="center" sx={{ 
+                  <TableCell align="center" sx={{
                     color: getActiveTokenCount(wallets) > 0 ? '#92E643' : '#fff',
                     borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                   }}>
                     Token Count
                   </TableCell>
-                  <TableCell sx={{ 
-                    fontWeight: 'bold', 
+                  <TableCell sx={{
+                    fontWeight: 'bold',
                     color: '#92E643',
                     borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
                     width: '120px',
@@ -1165,8 +1212,8 @@ const WalletManager = () => {
                   }}>
                     Total Amount
                   </TableCell>
-                  <TableCell sx={{ 
-                    fontWeight: 'bold', 
+                  <TableCell sx={{
+                    fontWeight: 'bold',
                     color: '#92E643',
                     borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
                     width: '100px',
@@ -1174,9 +1221,9 @@ const WalletManager = () => {
                   }}>
                     Value
                   </TableCell>
-                  <TableCell sx={{ 
-                    fontWeight: 'bold', 
-                    color: '#92E643', 
+                  <TableCell sx={{
+                    fontWeight: 'bold',
+                    color: '#92E643',
                     width: '100px',
                     borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
                     textAlign: 'center'
@@ -1189,115 +1236,115 @@ const WalletManager = () => {
                 {wallets
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((wallet) => {
-                  // Pegar o token principal se existir (primeiro do array ou o mais recente)
-                  const primaryToken = wallet.tokens && wallet.tokens.length > 0 
-                    ? wallet.tokens.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated))[0] 
-                    : null;
-                  
-                  // Calculate total amount across all tokens
-                  const totalTokenAmount = calculateTotalTokenAmount(wallet);
-                  
-                  return (
-                    <TableRow 
-                      key={wallet.address}
-                      sx={{ 
-                        '&:last-child td, &:last-child th': { border: 0 },
-                        '&:hover': { backgroundColor: 'rgba(146, 230, 67, 0.05)' }
-                      }}
-                    >
-                      <TableCell 
-                        component="th" 
-                        scope="row"
-                        sx={{ 
-                          color: '#fff',
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                    // Pegar o token principal se existir (primeiro do array ou o mais recente)
+                    const primaryToken = wallet.tokens && wallet.tokens.length > 0
+                      ? wallet.tokens.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated))[0]
+                      : null;
+
+                    // Calculate total amount across all tokens
+                    const totalTokenAmount = calculateTotalTokenAmount(wallet);
+
+                    return (
+                      <TableRow
+                        key={wallet.address}
+                        sx={{
+                          '&:last-child td, &:last-child th': { border: 0 },
+                          '&:hover': { backgroundColor: 'rgba(146, 230, 67, 0.05)' }
                         }}
                       >
-                        <Box 
-                          sx={{ 
-                            display: 'flex', 
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            maxWidth: { xs: '120px', sm: '180px', md: '220px' }
+                        <TableCell
+                          component="th"
+                          scope="row"
+                          sx={{
+                            color: '#fff',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                           }}
                         >
-                          <Typography 
-                            variant="body2" 
-                            sx={{ 
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              maxWidth: { xs: '120px', sm: '180px', md: '220px' }
                             }}
                           >
-                            {wallet.address}
-                          </Typography>
-                          <IconButton 
-                            size="small" 
-                            onClick={() => copyToClipboard(wallet.address)}
-                            sx={{ color: '#92E643', ml: 1 }}
-                          >
-                            <ContentCopyIcon fontSize="small" />
-                          </IconButton>
-                        </Box>
-                      </TableCell>
-                      <TableCell 
-                        align="right"
-                        sx={{ 
-                          color: wallet.solBalance > 0 ? '#92E643' : '#fff',
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}
-                      >
-                        {wallet.solBalance ? wallet.solBalance.toFixed(4) : '0'}
-                      </TableCell>
-                      <TableCell 
-                        align="center"
-                        sx={{ 
-                          color: getActiveTokenCount(wallet) > 0 ? '#92E643' : '#fff',
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}
-                      >
-                        {getActiveTokenCount(wallet)}
-                      </TableCell>
-                      <TableCell 
-                        align="right"
-                        sx={{ 
-                          color: totalTokenAmount > 0 ? '#92E643' : '#fff',
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}
-                      >
-                        {totalTokenAmount.toLocaleString(undefined, {maximumFractionDigits: 2})}
-                      </TableCell>
-                      <TableCell 
-                        align="right"
-                        sx={{ 
-                          color: primaryToken && primaryToken.amount > 0 ? '#92E643' : '#fff',
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}
-                      >
-                        {primaryToken ? `${primaryToken.symbol || '-'}` : '-'}
-                      </TableCell>
-                      <TableCell 
-                        align="center"
-                        sx={{ 
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}
-                      >
-                        <Tooltip title="View Details">
-                          <IconButton 
-                            size="small" 
-                            onClick={() => openWalletInfo(wallet)}
-                            sx={{ color: '#92E643' }}
-                          >
-                            <InfoIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              {wallet.address}
+                            </Typography>
+                            <IconButton
+                              size="small"
+                              onClick={() => copyToClipboard(wallet.address)}
+                              sx={{ color: '#92E643', ml: 1 }}
+                            >
+                              <ContentCopyIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        </TableCell>
+                        <TableCell
+                          align="right"
+                          sx={{
+                            color: wallet.solBalance > 0 ? '#92E643' : '#fff',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                          }}
+                        >
+                          {wallet.solBalance ? wallet.solBalance.toFixed(4) : '0'}
+                        </TableCell>
+                        <TableCell
+                          align="center"
+                          sx={{
+                            color: getActiveTokenCount(wallet) > 0 ? '#92E643' : '#fff',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                          }}
+                        >
+                          {getActiveTokenCount(wallet)}
+                        </TableCell>
+                        <TableCell
+                          align="right"
+                          sx={{
+                            color: totalTokenAmount > 0 ? '#92E643' : '#fff',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                          }}
+                        >
+                          {totalTokenAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell
+                          align="right"
+                          sx={{
+                            color: primaryToken && primaryToken.amount > 0 ? '#92E643' : '#fff',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                          }}
+                        >
+                          {primaryToken ? `${primaryToken.symbol || '-'}` : '-'}
+                        </TableCell>
+                        <TableCell
+                          align="center"
+                          sx={{
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                          }}
+                        >
+                          <Tooltip title="View Details">
+                            <IconButton
+                              size="small"
+                              onClick={() => openWalletInfo(wallet)}
+                              sx={{ color: '#92E643' }}
+                            >
+                              <InfoIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
               </TableBody>
             </Table>
-            
+
             {/* Add Pagination */}
             <TablePagination
               rowsPerPageOptions={[5, 10, 20, 30]}
@@ -1321,8 +1368,7 @@ const WalletManager = () => {
                 '& .MuiIconButton-root.Mui-disabled': {
                   color: 'rgba(146, 230, 67, 0.3)',
                 },
-              }}
-            />
+              }} />
             {hasMoreWallets && (
               <Box sx={{ textAlign: 'center', py: 2, borderTop: '1px solid rgba(146, 230, 67, 0.2)' }}>
                 <ActionButton
@@ -1340,8 +1386,8 @@ const WalletManager = () => {
         </Paper>
       </Box>
 
-      <Dialog 
-        open={walletDialogOpen} 
+      <Dialog
+        open={walletDialogOpen}
         onClose={() => setWalletDialogOpen(false)}
         PaperProps={{
           sx: {
@@ -1354,7 +1400,7 @@ const WalletManager = () => {
           }
         }}
       >
-        <DialogTitle sx={{ 
+        <DialogTitle sx={{
           borderBottom: '1px solid rgba(146, 230, 67, 0.3)',
           color: '#92E643',
           fontWeight: 'bold',
@@ -1374,8 +1420,8 @@ const WalletManager = () => {
                   </Typography>
                   <Box sx={{ display: 'flex', ml: 2 }}>
                     <Tooltip title="Copy Address">
-                      <IconButton 
-                        size="small" 
+                      <IconButton
+                        size="small"
                         onClick={() => copyToClipboard(selectedWallet.address)}
                         sx={{ color: '#92E643', mr: 1 }}
                       >
@@ -1383,8 +1429,8 @@ const WalletManager = () => {
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="View in Solana Explorer">
-                      <IconButton 
-                        size="small" 
+                      <IconButton
+                        size="small"
                         component="a"
                         href={`https://explorer.solana.com/address/${selectedWallet.address}?cluster=devnet`}
                         target="_blank"
@@ -1406,15 +1452,15 @@ const WalletManager = () => {
                   {selectedWallet.solBalance ? selectedWallet.solBalance.toFixed(6) : '0'} SOL
                 </Typography>
               </Box>
-              
+
               <Box sx={{ mb: 3 }}>
                 <Typography variant="subtitle2" sx={{ color: '#92E643', mb: 1 }}>
                   Tokens ({getActiveTokenCount(selectedWallet)})
                 </Typography>
-                
+
                 {selectedWallet.tokens && selectedWallet.tokens.length > 0 ? (
-                  <Table size="small" sx={{ 
-                    backgroundColor: 'rgba(0,0,0,0.2)', 
+                  <Table size="small" sx={{
+                    backgroundColor: 'rgba(0,0,0,0.2)',
                     borderRadius: 1,
                     overflow: 'hidden',
                     '& th, & td': {
@@ -1434,8 +1480,8 @@ const WalletManager = () => {
                     <TableBody>
                       {selectedWallet.tokens.map((token, index) => (
                         <TableRow key={index}>
-                          <TableCell 
-                            sx={{ 
+                          <TableCell
+                            sx={{
                               color: '#fff',
                               maxWidth: '180px',
                               overflow: 'hidden',
@@ -1449,13 +1495,13 @@ const WalletManager = () => {
                               </Typography>
                             </Tooltip>
                           </TableCell>
-                          <TableCell 
+                          <TableCell
                             align="right"
                             sx={{ color: token.amount > 0 ? '#92E643' : '#fff' }}
                           >
-                            {token.amount.toLocaleString(undefined, {maximumFractionDigits: 2})}
+                            {token.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                           </TableCell>
-                          <TableCell 
+                          <TableCell
                             align="right"
                             sx={{ color: '#92E643' }}
                           >
@@ -1472,11 +1518,10 @@ const WalletManager = () => {
                                   rel="noopener noreferrer"
                                   sx={{ color: '#92E643' }}
                                 >
-                                  <img 
-                                      src="./SolanaExplorer.png" 
-                                      alt="SolScan" 
-                                      style={{ width: 18, height: 18, borderRadius: 8 }} 
-                                    />
+                                  <img
+                                    src="./SolanaExplorer.png"
+                                    alt="SolScan"
+                                    style={{ width: 18, height: 18, borderRadius: 8 }} />
                                 </IconButton>
                               </Tooltip>
                               <Tooltip title="View in Solscan">
@@ -1488,11 +1533,11 @@ const WalletManager = () => {
                                   rel="noopener noreferrer"
                                   sx={{ color: '#92E643' }}
                                 >
-                                  <img 
-                                      src="https://solscan.io/favicon.ico" 
-                                      alt="SolScan" 
-                                      style={{ width: 16, height: 16 }} 
-                                    />
+                                  <img
+                                    src="https://solscan.io/favicon.ico"
+                                    alt="SolScan"
+                                    style={{ width: 16, height: 16 }}
+                                  />
                                 </IconButton>
                               </Tooltip>
                             </Box>
@@ -1517,6 +1562,7 @@ const WalletManager = () => {
         </DialogActions>
       </Dialog>
     </ChaosPaper>
+  </>
   );
 };
 
