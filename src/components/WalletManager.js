@@ -128,14 +128,24 @@ const WalletManager = () => {
     } catch (error) {
       console.error('Failed to fetch master tokens:', error);
       
-      // Adicionar lógica de retentativa automática para erros de timeout (408, 504)
-      if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
+      // Melhorar feedback de erro para o usuário
+      if (error.response?.status === 503) {
+        // Erro específico de conexão de banco de dados
+        setError('O banco de dados está temporariamente indisponível. Isso pode ocorrer devido a restrições de IP no MongoDB Atlas. Tente novamente mais tarde ou contate o suporte.');
+      } else if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
         console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
         setTimeout(() => fetchMasterTokens(nextPage, retryCount + 1), 2000);
       } else if (retryCount >= 3) {
         // Limite de tentativas atingido, mostrar tokens vazios e não quebrar a interface
         setMasterTokens(prevTokens => nextPage === 0 ? [] : prevTokens);
         setHasMoreTokens(false);
+        
+        // Mensagem de erro mais específica
+        if (error.code === 'ECONNABORTED') {
+          setError('Tempo limite atingido ao buscar tokens. O servidor pode estar sobrecarregado.');
+        } else {
+          setError('Não foi possível carregar os tokens após várias tentativas. Verifique sua conexão ou tente novamente mais tarde.');
+        }
       }
     } finally {
       setLoadingMoreTokens(false);
@@ -180,18 +190,32 @@ const WalletManager = () => {
       // Atualizar estado de paginação
       setWalletPage(nextPage);
       setHasMoreWallets(response.data.pagination?.hasMore || false);
+      
+      // Limpar qualquer mensagem de erro anterior
+      setError(null);
     } catch (error) {
       console.error('Failed to fetch wallets:', error);
       
-      // Adicionar lógica de retentativa automática para erros de timeout (408, 504)
-      if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
+      // Melhorar feedback de erro para o usuário
+      if (error.response?.status === 503) {
+        // Erro específico de conexão de banco de dados
+        setError('O banco de dados está temporariamente indisponível. Isso pode ocorrer devido a restrições de IP no MongoDB Atlas. Verifique as configurações de whitelist do MongoDB ou contate o suporte.');
+      } else if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
         console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
         setTimeout(() => fetchWallets(nextPage, retryCount + 1), 2000);
       } else if (retryCount >= 3) {
-        // Limite de tentativas atingido, mostrar mensagem de erro e não quebrar a interface
-        setError('Não foi possível carregar as carteiras. Servidor com alta demanda, tente novamente mais tarde.');
+        // Limite de tentativas atingido, mostrar carteiras vazias e não quebrar a interface
         setWallets(prevWallets => nextPage === 0 ? [] : prevWallets);
         setHasMoreWallets(false);
+        
+        // Mensagem de erro mais específica
+        if (error.code === 'ECONNABORTED') {
+          setError('Tempo limite atingido ao buscar carteiras. O servidor pode estar sobrecarregado.');
+        } else if (error.response?.status === 500) {
+          setError('Erro no servidor: O MongoDB pode não estar acessível devido a restrições de IP. O administrador deve verificar as configurações de whitelist do MongoDB Atlas.');
+        } else {
+          setError('Não foi possível carregar as carteiras. Servidor com alta demanda, tente novamente mais tarde.');
+        }
       }
     } finally {
       setLoadingMoreWallets(false);
