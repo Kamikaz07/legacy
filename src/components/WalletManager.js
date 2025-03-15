@@ -31,9 +31,8 @@ import { styled } from '@mui/system';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import InfoIcon from '@mui/icons-material/Info';
 import LaunchIcon from '@mui/icons-material/Launch';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { Transaction, Connection, PublicKey } from '@solana/web3.js';
+import { Transaction, PublicKey } from '@solana/web3.js';
 
 const ChaosPaper = styled(Paper)(({ theme }) => ({
   padding: '20px',
@@ -72,7 +71,6 @@ const WalletManager = () => {
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [selectedWallet, setSelectedWallet] = useState(null);
-  const [walletInfo, setWalletInfo] = useState(null);
   const [walletDialogOpen, setWalletDialogOpen] = useState(false);
   const [masterTokens, setMasterTokens] = useState([]);
   const [selectedToken, setSelectedToken] = useState('');
@@ -89,13 +87,9 @@ const WalletManager = () => {
   const [walletPage, setWalletPage] = useState(0);
   const [hasMoreWallets, setHasMoreWallets] = useState(true);
   const [loadingMoreWallets, setLoadingMoreWallets] = useState(false);
-
-  // Add this state for offline mode
   const [offlineMode, setOfflineMode] = useState(false);
-  // Add isLoadingData state for loading indicator
   const [isLoadingData, setIsLoadingData] = useState(false);
-  
-  // Add mock data generation function
+
   const generateMockData = (count = 5) => {
     const mockWallets = [];
     for (let i = 0; i < count; i++) {
@@ -116,108 +110,146 @@ const WalletManager = () => {
     return mockWallets;
   };
 
-  // Modified fetchMasterTokens function with improved offline mode support
+  const fetchWallets = async (nextPage = 0, retryCount = 0) => {
+    setIsLoadingData(true);
+    try {
+      setLoadingMoreWallets(nextPage > 0);
+
+      if (offlineMode) {
+        setTimeout(() => {
+          const mockWallets = generateMockData(10);
+          setWallets(mockWallets);
+          setWalletStats({
+            totalWallets: mockWallets.length,
+            fromDatabase: false,
+            newlyCreated: mockWallets.length
+          });
+          setHasMoreWallets(false);
+          setLoadingMoreWallets(false);
+          setError('Usando dados simulados: o banco de dados não está disponível. Reconectando...');
+        }, 500);
+
+        setTimeout(() => {
+          console.log("Tentando reconectar ao banco de dados...");
+          axios.get(`${process.env.REACT_APP_API_URL}/health`)
+            .then(response => {
+              if (response.data.database === 'connected') {
+                console.log("Banco de dados reconectado!");
+                setOfflineMode(false);
+                setWallets([]);
+                fetchWallets(0);
+                fetchMasterTokens();
+              }
+            })
+            .catch(err => {
+              console.log("Banco de dados ainda indisponível:", err.message);
+            });
+        }, 10000);
+        return;
+      }
+
+      console.log(`Buscando carteiras (página ${nextPage})`);
+      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/wallets`, {
+        params: { page: nextPage, pageSize: 10 },
+        timeout: 10000
+      });
+
+      if (nextPage === 0) {
+        setWallets(response.data.wallets || []);
+      } else {
+        setWallets(prev => [...prev, ...(response.data.wallets || [])]);
+      }
+
+      setWalletStats({
+        totalWallets: response.data.pagination?.total || response.data.wallets?.length || 0,
+        fromDatabase: (response.data.wallets?.length || 0) > 0
+      });
+      setWalletPage(nextPage);
+      setHasMoreWallets(response.data.pagination?.hasMore || false);
+      setError(null);
+    } catch (error) {
+      console.error('Failed to fetch wallets:', error);
+
+      if (error.response?.status === 503 && !offlineMode) {
+        console.log("MongoDB unavailable - switching to offline mode");
+        setOfflineMode(true);
+        setError('Banco de dados indisponível. Usando modo offline com dados simulados.');
+        const mockWallets = generateMockData(10);
+        setWallets(mockWallets);
+        setWalletStats({
+          totalWallets: mockWallets.length,
+          fromDatabase: false,
+          newlyCreated: mockWallets.length
+        });
+        setHasMoreWallets(false);
+      } else if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
+        console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
+        setTimeout(() => fetchWallets(nextPage, retryCount + 1), 2000);
+      } else if (retryCount >= 3) {
+        setWallets(prev => nextPage === 0 ? [] : prev);
+        setHasMoreWallets(false);
+        setError('Não foi possível carregar as carteiras após várias tentativas.');
+      }
+    } finally {
+      setLoadingMoreWallets(false);
+      setIsLoadingData(false);
+    }
+  };
+
   const fetchMasterTokens = async (nextPage = 0, retryCount = 0) => {
     if (!publicKey) return;
-    
+    setIsLoadingData(true);
     try {
       setLoadingMoreTokens(nextPage > 0);
-      setIsLoadingData(true);
-      
-      // If we're in offline mode, return mock data
+
       if (offlineMode) {
         setTimeout(() => {
           setMasterTokens([
-            {
-              mint: "mocktoken1",
-              balance: 10000,
-              decimals: 9,
-              symbol: "MOCK",
-              name: "Mock Token (Offline Mode)"
-            },
-            {
-              mint: "mocktoken2",
-              balance: 5000,
-              decimals: 9,
-              symbol: "TEST",
-              name: "Test Token (Offline Mode)"
-            }
+            { mint: "mocktoken1", balance: 10000, decimals: 9, symbol: "MOCK", name: "Mock Token (Offline Mode)" },
+            { mint: "mocktoken2", balance: 5000, decimals: 9, symbol: "TEST", name: "Test Token (Offline Mode)" }
           ]);
           setHasMoreTokens(false);
           setLoadingMoreTokens(false);
-          setIsLoadingData(false);
         }, 500);
         return;
       }
-      
+
       console.log(`Buscando tokens para ${publicKey.toString()} (página ${nextPage})`);
-      
       const response = await axios.get(
         `${process.env.REACT_APP_API_URL}/api/master-tokens/${publicKey.toString()}`,
-        { 
-          params: { page: nextPage, pageSize: 10 },
-          timeout: 15000
-        }
+        { params: { page: nextPage, pageSize: 10 }, timeout: 15000 }
       );
-      
-      // Guarantee we have an array of tokens, even if empty
+
       const tokens = response.data?.tokens || [];
-      
-      // Filter tokens with balance if we have tokens
-      const tokensWithBalance = tokens.filter(token => 
-        token && typeof token.balance === 'number' && token.balance > 0
-      );
-      
-      // If this is the first page, replace tokens. Otherwise, add
+      const tokensWithBalance = tokens.filter(token => token && typeof token.balance === 'number' && token.balance > 0);
+
       if (nextPage === 0) {
         setMasterTokens(tokensWithBalance);
       } else {
         setMasterTokens(prev => [...prev, ...tokensWithBalance]);
       }
-      
-      // Update pagination state based on response
+
       setTokenPage(nextPage);
       setHasMoreTokens(response.data?.pagination?.hasMore || false);
-      
-      // Reset offline mode and errors if successful
-      if (offlineMode) {
-        setOfflineMode(false);
-        setError(null);
-      }
+      setError(null);
     } catch (error) {
       console.error('Failed to fetch master tokens:', error);
-      
-      // Database unavailable - switch to offline mode
-      if (error.response?.status === 503) {
-        if (!offlineMode) {
-          console.log("MongoDB unavailable - switching to offline mode");
-          setOfflineMode(true);
-          setError('Banco de dados indisponível. Usando modo offline com dados simulados. Algumas funcionalidades serão limitadas.');
-          // Set mock data in offline mode
-          setMasterTokens([
-            {
-              mint: "mocktoken1",
-              balance: 10000,
-              decimals: 9,
-              symbol: "MOCK",
-              name: "Mock Token (Offline Mode)"
-            }
-          ]);
-          setHasMoreTokens(false);
-        }
-      } else if (retryCount < 3 && (error.response?.status === 408 || error.response?.status === 504)) {
+
+      if (error.response?.status === 503 && !offlineMode) {
+        console.log("MongoDB unavailable - switching to offline mode");
+        setOfflineMode(true);
+        setError('Banco de dados indisponível. Usando modo offline com dados simulados.');
+        setMasterTokens([
+          { mint: "mocktoken1", balance: 10000, decimals: 9, symbol: "MOCK", name: "Mock Token (Offline Mode)" }
+        ]);
+        setHasMoreTokens(false);
+      } else if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
         console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
         setTimeout(() => fetchMasterTokens(nextPage, retryCount + 1), 2000);
       } else {
-        // Keep existing tokens if it's not the first page
-        setMasterTokens(prevTokens => nextPage === 0 ? [] : prevTokens);
+        setMasterTokens(prev => nextPage === 0 ? [] : prev);
         setHasMoreTokens(false);
-        
-        if (error.code === 'ECONNABORTED') {
-          setError('Tempo limite atingido ao buscar tokens. O servidor pode estar sobrecarregado.');
-        } else {
-          setError('Não foi possível carregar os tokens após várias tentativas. Verifique sua conexão ou tente novamente mais tarde.');
-        }
+        setError('Não foi possível carregar os tokens após várias tentativas.');
       }
     } finally {
       setLoadingMoreTokens(false);
@@ -229,127 +261,9 @@ const WalletManager = () => {
     fetchMasterTokens();
   }, [publicKey]);
 
-  // Carregar carteiras ao montar o componente
   useEffect(() => {
-    fetchWallets(0); // Reset to first page
+    fetchWallets(0);
   }, []);
-
-  // Modified fetchWallets function with improved offline mode support
-  const fetchWallets = async (nextPage = 0, retryCount = 0) => {
-    try {
-      setLoadingMoreWallets(nextPage > 0);
-      setIsLoadingData(true);
-      
-      // If we're in offline mode, return mock data
-      if (offlineMode) {
-        setTimeout(() => {
-          const mockWallets = generateMockData(10);
-          // Replace state completely with mock data
-          setWallets(mockWallets);
-          setWalletStats({
-            totalWallets: mockWallets.length,
-            fromDatabase: false,
-            newlyCreated: mockWallets.length
-          });
-          setHasMoreWallets(false);
-          setLoadingMoreWallets(false);
-          setIsLoadingData(false);
-          setError('Usando dados simulados: o banco de dados não está disponível. Reconectando...');
-        }, 500);
-        
-        // Try to reconnect to the database periodically
-        setTimeout(() => {
-          console.log("Tentando reconectar ao banco de dados...");
-          axios.get(`${process.env.REACT_APP_API_URL}/health`)
-            .then(response => {
-              if (response.data.database === 'connected') {
-                console.log("Banco de dados reconectado!");
-                setOfflineMode(false);
-                setWallets([]); // Clear mock data before reloading
-                fetchWallets(0); // Reload real data
-                fetchMasterTokens(); // Reload real tokens
-              }
-            })
-            .catch(err => {
-              console.log("Banco de dados ainda indisponível:", err.message);
-            });
-        }, 30000); // Try again in 30 seconds
-        
-        return;
-      }
-      
-      console.log(`Buscando carteiras (página ${nextPage})`);
-      
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/wallets`, {
-        params: { page: nextPage, pageSize: 10 },
-        timeout: 10000
-      });
-      
-      // If this is the first page, replace wallets. Otherwise, add
-      if (nextPage === 0) {
-        setWallets(response.data.wallets || []);
-      } else {
-        setWallets(prev => [...prev, ...(response.data.wallets || [])]);
-      }
-      
-      // Update wallet statistics
-      setWalletStats({
-        ...walletStats,
-        totalWallets: response.data.pagination?.total || response.data.wallets?.length || 0,
-        fromDatabase: (response.data.wallets?.length || 0) > 0
-      });
-      
-      // Update pagination state
-      setWalletPage(nextPage);
-      setHasMoreWallets(response.data.pagination?.hasMore || false);
-      
-      // Reset offline mode and errors if successful
-      if (offlineMode) {
-        setOfflineMode(false);
-        setError(null);
-      }
-    } catch (error) {
-      console.error('Failed to fetch wallets:', error);
-      
-      // Database unavailable - switch to offline mode
-      if (error.response?.status === 503) {
-        if (!offlineMode) {
-          console.log("MongoDB unavailable - switching to offline mode");
-          setOfflineMode(true);
-          setError('Banco de dados indisponível. Usando modo offline com dados simulados. Algumas funcionalidades serão limitadas.');
-          
-          // Set mock data
-          const mockWallets = generateMockData(10);
-          setWallets(mockWallets);
-          setWalletStats({
-            totalWallets: mockWallets.length,
-            fromDatabase: false,
-            newlyCreated: mockWallets.length
-          });
-          setHasMoreWallets(false);
-        }
-      } else if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
-        console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
-        setTimeout(() => fetchWallets(nextPage, retryCount + 1), 2000);
-      } else {
-        // Keep existing wallets if it's not the first page
-        setWallets(prevWallets => nextPage === 0 ? [] : prevWallets);
-        setHasMoreWallets(false);
-        
-        // More specific error message
-        if (error.code === 'ECONNABORTED') {
-          setError('Tempo limite atingido ao buscar carteiras. O servidor pode estar sobrecarregado.');
-        } else if (error.response?.status === 500) {
-          setError('Erro no servidor: O MongoDB pode não estar acessível devido a restrições de IP. O administrador deve verificar as configurações de whitelist do MongoDB Atlas.');
-        } else {
-          setError('Não foi possível carregar as carteiras após várias tentativas. Verifique sua conexão ou tente novamente mais tarde.');
-        }
-      }
-    } finally {
-      setLoadingMoreWallets(false);
-      setIsLoadingData(false);
-    }
-  };
 
   const generateWallets = async () => {
     setLoading(true);
@@ -357,7 +271,7 @@ const WalletManager = () => {
     setSuccessMessage(null);
     try {
       const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate-wallets`, {
-        count: walletsToCreate // Send the count to the API
+        count: walletsToCreate
       });
       
       setWallets(response.data.wallets);
@@ -367,7 +281,6 @@ const WalletManager = () => {
         newlyCreated: response.data.newlyCreated || 0
       });
       
-      // Mostrar mensagem de sucesso
       if (response.data.fromDatabase && response.data.newlyCreated === 0) {
         setSuccessMessage('Carteiras carregadas do banco de dados.');
       } else if (response.data.newlyCreated > 0) {
@@ -405,18 +318,14 @@ const WalletManager = () => {
       let completedBatches = 0;
       const signatures = [];
       
-      // Processar cada transação em sequência
       for (const txBase64 of transactions) {
         try {
-          // Converter base64 para Uint8Array
           const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
           const transaction = Transaction.from(txBytes);
           
-          // Assinar a transação
           setSuccessMessage(`Signing transaction ${completedBatches + 1}/${batches}...`);
           const signedTx = await signTransaction(transaction);
           
-          // Enviar a transação
           setSuccessMessage(`Sending transaction ${completedBatches + 1}/${batches}...`);
           const signature = await connection.sendRawTransaction(signedTx.serialize(), {
             skipPreflight: false,
@@ -426,7 +335,6 @@ const WalletManager = () => {
           signatures.push(signature);
           setSuccessMessage(`Waiting for confirmation of transaction ${completedBatches + 1}/${batches}...`);
           
-          // Confirmar a transação usando a abordagem não depreciada
           const latestBlockhash = await connection.getLatestBlockhash();
           const confirmationResponse = await connection.confirmTransaction({
             signature,
@@ -434,12 +342,10 @@ const WalletManager = () => {
             lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
           });
           
-          // Verificar se houve erros na confirmação
           if (confirmationResponse.value.err) {
             throw new Error(`Erro de confirmação: ${JSON.stringify(confirmationResponse.value.err)}`);
           }
           
-          // Verificar o status da transação após a confirmação
           const status = await connection.getSignatureStatus(signature, {
             searchTransactionHistory: true
           });
@@ -452,7 +358,6 @@ const WalletManager = () => {
           const progress = Math.floor((completedBatches / batches) * 100);
           setProgressValue(progress);
           
-          // Atualizar o progresso
           setSuccessMessage(`Progress: ${completedBatches}/${batches} batches completed (${progress}%)...`);
         } catch (txError) {
           console.error('Transaction error:', txError);
@@ -461,33 +366,24 @@ const WalletManager = () => {
         }
       }
       
-      // Esperar um pouco para que as atualizações sejam refletidas na blockchain
       if (completedBatches === batches) {
         setSuccessMessage('Transactions completed. Waiting for blockchain propagation (5 seconds)...');
-        
-        // Esperar 5 segundos para garantir que as transações estejam confirmadas e propagadas
         await new Promise(resolve => setTimeout(resolve, 5000));
         
         setSuccessMessage('Verifying actual balances on blockchain...');
-        
-        // Atualizar o banco de dados com os novos saldos direto da blockchain
         await updateBalancesInDatabase();
         
-        // Atualizar a interface com a mensagem de sucesso final
         setSuccessMessage(`${solAmount} SOL distributed successfully! Each wallet received approximately ${amountPerWallet.toFixed(4)} SOL.`);
       } else {
         setError(`Apenas ${completedBatches} de ${batches} lotes foram processados. Verificando saldos atualizados...`);
-        // Tenta atualizar os saldos mesmo em caso de erro parcial
         await updateBalancesInDatabase();
       }
       
-      // Buscar carteiras atualizadas
-      fetchWallets(0); // Reset to first page
+      fetchWallets(0);
     } catch (error) {
       console.error('Erro completo:', error);
       setError('Failed to fund wallets: ' + (error.response?.data?.error || error.message));
       
-      // Tentar verificar os saldos mesmo em caso de erro
       try {
         await updateBalancesInDatabase();
         setSuccessMessage('Saldos atualizados após erro. Verifique se as transações foram confirmadas.');
@@ -514,21 +410,18 @@ const WalletManager = () => {
       return;
     }
     
-    // Validar a percentagem de tokens
     const percentage = parseFloat(tokenPercentage);
     if (isNaN(percentage) || percentage <= 0 || percentage > 100) {
       setError('Por favor, insira uma percentagem válida entre 0 e 100');
       return;
     }
     
-    // Encontrar o token selecionado para obter o saldo disponível
     const selectedTokenInfo = masterTokens.find(t => t.mint === selectedToken);
     if (!selectedTokenInfo) {
       setError('Token information not found');
       return;
     }
     
-    // Calcular o montante total disponível e quanto será enviado por carteira
     const availableBalance = selectedTokenInfo.balance;
     const totalToDistribute = (availableBalance * percentage) / 100;
     const amountPerWallet = totalToDistribute / wallets.length;
@@ -545,13 +438,12 @@ const WalletManager = () => {
     setIsProcessing(true);
     
     try {
-      // Mostrar mensagem de início do processo
       setSuccessMessage(`Preparando distribuição de ${percentage}% dos tokens (${totalToDistribute.toFixed(2)} ${selectedTokenInfo.symbol}) para ${wallets.length} carteiras...`);
       
       const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/buy-tokens`, { 
         tokenAddress: selectedToken,
         masterAddress: publicKey.toString(),
-        fixedAmount: amountPerWallet.toString() // Enviar o valor calculado por carteira
+        fixedAmount: amountPerWallet.toString()
       });
 
       const { transactions, totalTokens, batches, tokenSymbol, tokenName } = response.data;
@@ -566,12 +458,10 @@ const WalletManager = () => {
       
       setSuccessMessage(`Preparado para enviar ${totalTokens.toFixed(2)} ${tokenSymbol} para ${wallets.length} carteiras em ${batches} lotes.`);
       
-      // Processar cada transação em sequência
       for (const [index, txBase64] of transactions.entries()) {
         try {
           setSuccessMessage(`Processando lote ${index + 1} de ${transactions.length}...`);
           
-          // Converter base64 para Uint8Array
           const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
           const transaction = Transaction.from(txBytes);
           
@@ -579,7 +469,6 @@ const WalletManager = () => {
             throw new Error('Failed to parse transaction');
           }
           
-          // Assinar a transação
           const signedTx = await signTransaction(transaction);
           
           if (!signedTx) {
@@ -590,10 +479,8 @@ const WalletManager = () => {
             throw new Error('Connection is not available');
           }
           
-          // Enviar a transação
           const signature = await connection.sendRawTransaction(signedTx.serialize());
           
-          // Confirmar a transação usando a abordagem não depreciada
           const latestBlockhash = await connection.getLatestBlockhash();
           await connection.confirmTransaction({
             signature,
@@ -605,7 +492,6 @@ const WalletManager = () => {
           const progress = Math.floor((completedBatches / batches) * 100);
           setProgressValue(progress);
           
-          // Atualizar o progresso
           setSuccessMessage(`Progress: ${completedBatches}/${batches} batches completed (${progress}%)...`);
         } catch (txError) {
           console.error('Transaction error:', txError);
@@ -615,18 +501,14 @@ const WalletManager = () => {
       }
       
       if (completedBatches === batches) {
-        // Atualizar o banco de dados com os novos saldos
         await updateBalancesInDatabase();
         
-        // Atualizar a interface com a mensagem de sucesso final
         setSuccessMessage(
           `Compra de tokens concluída com sucesso! Total de ${totalTokens.toFixed(2)} ${tokenSymbol} (${tokenName}) distribuídos, ${percentage}% do saldo disponível.`
         );
       }
       
-      // Buscar carteiras atualizadas
-      fetchWallets(0); // Reset to first page
-      // Atualizar tokens mestre para refletir o novo saldo
+      fetchWallets(0);
       fetchMasterTokens();
     } catch (error) {
       setError('Failed to buy tokens: ' + (error.response?.data?.error || error.message || 'Unknown error'));
@@ -654,17 +536,15 @@ const WalletManager = () => {
     setIsProcessing(true);
     
     try {
-      // Get selected token info for better UI feedback
       const selectedTokenInfo = masterTokens.find(t => t.mint === selectedToken);
       const tokenSymbol = selectedTokenInfo?.symbol || "selected token";
       
-      // Show initial message
       setSuccessMessage(`Preparing to collect all ${tokenSymbol} and SOL from shadow wallets...`);
       
       const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/sell-tokens`, {
         tokenAddress: selectedToken,
         masterAddress: publicKey.toString(),
-        includeSol: true // Enable SOL collection as well
+        includeSol: true
       });
 
       const { 
@@ -683,7 +563,6 @@ const WalletManager = () => {
         return;
       }
       
-      // Prepare status message showing both token and SOL amounts
       const collectionSummary = [];
       if (walletsWithTokens > 0) {
         collectionSummary.push(`${totalTokensCollected} ${responseSymbol} from ${walletsWithTokens} wallets`);
@@ -697,18 +576,14 @@ const WalletManager = () => {
       let completedTransactions = 0;
       const totalTransactions = transactions.length;
       
-      // Process each transaction sequentially
       for (const [index, txBase64] of transactions.entries()) {
         try {
           setSuccessMessage(`Processing transaction ${index + 1} of ${totalTransactions}...`);
           
-          // Convert base64 to Uint8Array
           const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
           
-          // Send the transaction (since it's already pre-signed in the backend)
           const signature = await connection.sendRawTransaction(txBytes);
           
-          // Confirm the transaction
           const latestBlockhash = await connection.getLatestBlockhash();
           await connection.confirmTransaction({
             signature,
@@ -720,25 +595,20 @@ const WalletManager = () => {
           const progress = Math.floor((completedTransactions / totalTransactions) * 100);
           setProgressValue(progress);
           
-          // Update progress
           setSuccessMessage(`Progress: ${completedTransactions}/${totalTransactions} transactions processed (${progress}%)...`);
         } catch (txError) {
           console.error('Transaction error:', txError);
-          // Log error but continue with other transactions
           console.log(`Error processing transaction ${index + 1}:`, txError);
         }
       }
       
       if (completedTransactions > 0) {
-        // Wait a moment for blockchain to propagate changes
         setSuccessMessage('Waiting for blockchain to update (5 seconds)...');
         await new Promise(resolve => setTimeout(resolve, 5000));
         
-        // Update database with new balances
         setSuccessMessage('Syncing wallet balances with blockchain...');
         await updateBalancesInDatabase();
         
-        // Create success message summarizing results
         const successSummary = [];
         if (walletsWithTokens > 0) {
           successSummary.push(`${totalTokensCollected} ${responseSymbol}`);
@@ -747,14 +617,12 @@ const WalletManager = () => {
           successSummary.push(`${totalSolCollected.toFixed(4)} SOL`);
         }
         
-        // Update the UI with success message
         setSuccessMessage(
           `Successfully collected ${successSummary.join(' and ')} from shadow wallets! ${completedTransactions} of ${totalTransactions} transactions were successful.`
         );
       }
       
-      // Refresh wallets and master tokens to show updated balances
-      fetchWallets(0); // Reset to first page
+      fetchWallets(0);
       fetchMasterTokens();
     } catch (error) {
       setError('Failed to collect assets: ' + (error.response?.data?.error || error.message || 'Unknown error'));
@@ -778,7 +646,6 @@ const WalletManager = () => {
     setIsProcessing(true);
     
     try {
-      // Show initial message
       setSuccessMessage(`Preparing to collect SOL from shadow wallets...`);
       
       const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/collect-sol`, {
@@ -803,18 +670,14 @@ const WalletManager = () => {
       let completedTransactions = 0;
       const totalTransactions = transactions.length;
       
-      // Process each transaction sequentially
       for (const [index, txBase64] of transactions.entries()) {
         try {
           setSuccessMessage(`Processing transaction ${index + 1} of ${totalTransactions}...`);
           
-          // Convert base64 to Uint8Array
           const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
           
-          // Send the transaction (since it's already pre-signed in the backend)
           const signature = await connection.sendRawTransaction(txBytes);
           
-          // Confirm the transaction
           const latestBlockhash = await connection.getLatestBlockhash();
           await connection.confirmTransaction({
             signature,
@@ -826,32 +689,26 @@ const WalletManager = () => {
           const progress = Math.floor((completedTransactions / totalTransactions) * 100);
           setProgressValue(progress);
           
-          // Update progress
           setSuccessMessage(`Progress: ${completedTransactions}/${totalTransactions} transactions processed (${progress}%)...`);
         } catch (txError) {
           console.error('Transaction error:', txError);
-          // Log error but continue with other transactions
           console.log(`Error processing transaction ${index + 1}:`, txError);
         }
       }
       
       if (completedTransactions > 0) {
-        // Wait a moment for blockchain to propagate changes
         setSuccessMessage('Waiting for blockchain to update (5 seconds)...');
         await new Promise(resolve => setTimeout(resolve, 5000));
         
-        // Update database with new balances
         setSuccessMessage('Syncing wallet balances with blockchain...');
         await updateBalancesInDatabase();
         
-        // Update the UI with success message
         setSuccessMessage(
           `Successfully collected ${totalSolCollected.toFixed(4)} SOL from shadow wallets! ${completedTransactions} of ${totalTransactions} transactions were successful.`
         );
       }
       
-      // Refresh wallets to show updated balances
-      fetchWallets(0); // Reset to first page
+      fetchWallets(0);
     } catch (error) {
       setError('Failed to collect SOL: ' + (error.response?.data?.error || error.message || 'Unknown error'));
       console.error('Collect SOL error:', error);
@@ -861,7 +718,6 @@ const WalletManager = () => {
     }
   };
 
-  // Função para atualizar saldos no banco de dados
   const updateBalancesInDatabase = async (retryCount = 0) => {
     if (wallets.length === 0) {
       return;
@@ -872,9 +728,7 @@ const WalletManager = () => {
       console.log("Buscando saldos para", wallets.length, "carteiras");
       
       const addresses = wallets.map(w => w.address);
-      
-      // Buscar saldos de SOL atualizados da blockchain em lotes para evitar muitas requisições
-      const QUERY_BATCH_SIZE = 5; // Reduzido para 5
+      const QUERY_BATCH_SIZE = 5;
       const solBalances = [];
       
       for (let i = 0; i < addresses.length; i += QUERY_BATCH_SIZE) {
@@ -882,20 +736,16 @@ const WalletManager = () => {
         const progress = Math.floor((i / addresses.length) * 100);
         setProgressValue(progress);
         
-        // Processar cada endereço no lote com timeout individual
         const batchPromises = batchAddresses.map(async (address) => {
           try {
             const publicKey = new PublicKey(address);
-            
-            // Uso do Promise.race para limitar o tempo de espera da consulta
             const balance = await Promise.race([
               connection.getBalance(publicKey),
               new Promise((_, reject) => 
                 setTimeout(() => reject(new Error('Balance fetch timeout')), 5000)
               )
             ]);
-            
-            return balance / 1e9; // Converter lamports para SOL
+            return balance / 1e9;
           } catch (err) {
             console.error(`Error fetching balance for ${address}:`, err);
             return 0;
@@ -905,7 +755,6 @@ const WalletManager = () => {
         const batchResults = await Promise.all(batchPromises);
         solBalances.push(...batchResults);
         
-        // Pequena pausa entre lotes para evitar rate limiting
         if (i + QUERY_BATCH_SIZE < addresses.length) {
           await new Promise(resolve => setTimeout(resolve, 200));
         }
@@ -913,13 +762,12 @@ const WalletManager = () => {
       
       setProgressValue(100);
       
-      // Enviar saldos atualizados para o backend
       console.log("Enviando saldos para o servidor...");
       await axios.post(`${process.env.REACT_APP_API_URL}/api/update-balances`, {
         addresses,
         solBalances
       }, {
-        timeout: 10000 // 10 segundos de timeout
+        timeout: 10000
       });
       
       setSuccessMessage("Saldos de SOL atualizados com sucesso!");
@@ -927,20 +775,17 @@ const WalletManager = () => {
     } catch (error) {
       console.error('Failed to update balances in database:', error);
       
-      // Adicionar lógica de retentativa automática para erros de timeout (408, 504)
       if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 2) {
         console.log(`Timeout ao atualizar saldos, tentando novamente (${retryCount + 1}/2)...`);
         setSuccessMessage(`Timeout ao atualizar saldos. Tentando novamente (${retryCount + 1}/2)...`);
         return updateBalancesInDatabase(retryCount + 1);
       }
       
-      // Se houve erro mesmo com retentativas, propagar para o chamador
       setError('Erro ao atualizar saldos: ' + (error.response?.data?.error || error.message));
       throw error;
     }
   };
 
-  // Função para verificar os saldos diretamente na blockchain
   const verifyBalances = async () => {
     if (wallets.length === 0) {
       setError('No wallets to verify');
@@ -954,16 +799,13 @@ const WalletManager = () => {
     setProgressValue(0);
     
     try {
-      // Primeiro verificar saldos de SOL
       await updateBalancesInDatabase();
       setSuccessMessage('SOL balances updated. Verifying tokens...');
       setProgressValue(30);
 
-      // Now verify ALL tokens for each wallet
       const addresses = wallets.map(w => w.address);
       const tokenMints = new Set();
       
-      // Collect all unique token mints from wallets
       wallets.forEach(wallet => {
         if (wallet.tokens && wallet.tokens.length > 0) {
           wallet.tokens.forEach(token => {
@@ -975,7 +817,6 @@ const WalletManager = () => {
       setProgressValue(40);
       setSuccessMessage(`Checking ${tokenMints.size} token types in ${addresses.length} wallets...`);
       
-      // Process each token type
       let processedTokens = 0;
       for (const tokenMint of tokenMints) {
         try {
@@ -996,7 +837,6 @@ const WalletManager = () => {
       setProgressValue(100);
       setSuccessMessage('All balances successfully updated!');
 
-      // Buscar carteiras atualizadas do backend para garantir consistência
       const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/wallets`);
       setWallets(response.data.wallets);
       
@@ -1017,7 +857,6 @@ const WalletManager = () => {
     setWalletDialogOpen(true);
   };
 
-  // Calculate total token amount for a wallet - already properly implemented
   const calculateTotalTokenAmount = (wallet) => {
     if (!wallet || !wallet.tokens || !Array.isArray(wallet.tokens)) return 0;
     return wallet.tokens.reduce((sum, token) => {
@@ -1035,20 +874,17 @@ const WalletManager = () => {
     setPage(0);
   };
 
-  // Add this function alongside your other utility functions
   const getActiveTokenCount = (wallet) => {
     if (!wallet || !wallet.tokens || !Array.isArray(wallet.tokens)) return 0;
     return wallet.tokens.filter(t => t && typeof t.amount === 'number' && t.amount > 0).length;
   };
 
-  // Add a loadMoreTokens function
   const loadMoreTokens = () => {
     if (hasMoreTokens && !loadingMoreTokens) {
       fetchMasterTokens(tokenPage + 1);
     }
   };
 
-  // Add a loadMoreWallets function
   const loadMoreWallets = () => {
     if (hasMoreWallets && !loadingMoreWallets) {
       fetchWallets(walletPage + 1);
@@ -1056,710 +892,675 @@ const WalletManager = () => {
   };
 
   return (
-    <>
     <ChaosPaper>
       {isLoadingData ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
           <CircularProgress sx={{ color: '#92E643' }} />
-          <Typography variant="body1" sx={{ ml: 2, color: '#92E643' }}>
-            {offlineMode ? "Preparando dados simulados..." : "Carregando dados..."}
-          </Typography>
         </Box>
       ) : (
-      <>
-      <Box sx={{ mb: 4 }}>
-              <Typography variant="h5" gutterBottom sx={{ color: '#92E643', fontWeight: 'bold' }}>
-                Manage Wallets {offlineMode && <Typography component="span" sx={{ color: 'warning.main', ml: 1, fontSize: '0.8rem' }}>(Modo Offline)</Typography>}
+        <>
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="h5" gutterBottom sx={{ color: '#92E643', fontWeight: 'bold' }}>
+              Manage Wallets
+            </Typography>
+
+            <Box sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: 2,
+              alignItems: 'flex-start',
+              mb: 3
+            }}>
+              <ActionButton
+                variant="contained"
+                onClick={generateWallets}
+                disabled={loading || !publicKey}
+                startIcon={loading && <CircularProgress size={20} />}
+              >
+                Create 30 Wallets
+              </ActionButton>
+
+              <Typography
+                variant="body2"
+                sx={{
+                  color: '#92E643',
+                  mt: 1,
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                {walletStats.totalWallets > 0 ?
+                  `Wallets: ${walletStats.totalWallets}` :
+                  "No wallets created"}
+              </Typography>
+            </Box>
+
+            <Paper sx={{ p: 3, mb: 3, backgroundColor: 'rgba(0, 0, 0, 0.3)', borderRadius: 2 }}>
+              <Typography variant="h6" gutterBottom sx={{ color: '#92E643' }}>
+                Send/Collect SOL
               </Typography>
 
-              {/* Área de criação de carteiras */}
               <Box sx={{
                 display: 'flex',
                 flexDirection: { xs: 'column', sm: 'row' },
+                alignItems: { xs: 'flex-start', sm: 'center' },
                 gap: 2,
-                alignItems: 'flex-start',
-                mb: 3
+                mb: 2
               }}>
+                <TextField
+                  type="number"
+                  label="SOL Amount"
+                  value={solAmount}
+                  onChange={(e) => setSolAmount(e.target.value)}
+                  size="small"
+                  sx={{
+                    minWidth: '120px',
+                    '& .MuiOutlinedInput-root': {
+                      color: '#fff',
+                      '& fieldset': { borderColor: '#92E643' },
+                    },
+                    '& .MuiInputLabel-root': { color: '#92E643' },
+                  }} />
                 <ActionButton
                   variant="contained"
-                  onClick={generateWallets}
-                  disabled={loading || !publicKey || isLoadingData}
+                  onClick={fundWallets}
+                  disabled={loading || !publicKey || wallets.length === 0 || parseFloat(solAmount) <= 0}
                   startIcon={loading && <CircularProgress size={20} />}
                 >
-                  Create 30 Wallets
+                  Send SOL
                 </ActionButton>
+                <ActionButton
+                  variant="contained"
+                  onClick={collectSol}
+                  disabled={loading || !publicKey || wallets.length === 0}
+                  startIcon={loading && <CircularProgress size={20} />}
+                >
+                  Collect SOL
+                </ActionButton>
+              </Box>
+            </Paper>
 
-                <Typography
-                  variant="body2"
+            <Paper sx={{ p: 3, mb: 3, backgroundColor: 'rgba(0, 0, 0, 0.3)', borderRadius: 2 }}>
+              <Typography variant="h6" gutterBottom sx={{ color: '#92E643' }}>
+                Send/Collect Tokens
+              </Typography>
+
+              <Box sx={{ mb: 2 }}>
+                <FormControl
+                  fullWidth
+                  variant="outlined"
                   sx={{
-                    color: '#92E643',
-                    mt: 1,
-                    display: 'flex',
-                    alignItems: 'center'
+                    mb: 2,
+                    '& .MuiOutlinedInput-root': {
+                      color: '#fff',
+                      '& fieldset': { borderColor: '#92E643' },
+                    },
+                    '& .MuiInputLabel-root': { color: '#92E643' },
                   }}
                 >
-                  {walletStats.totalWallets > 0 ?
-                    `Wallets: ${walletStats.totalWallets}${offlineMode ? ' (Simuladas)' : ''}` :
-                    "No wallets created"}
-                </Typography>
-              </Box>
-
-              {/* Área para adicionar SOL */}
-              <Paper sx={{ p: 3, mb: 3, backgroundColor: 'rgba(0, 0, 0, 0.3)', borderRadius: 2 }}>
-                <Typography variant="h6" gutterBottom sx={{ color: '#92E643' }}>
-                  Send/Collect SOL
-                </Typography>
+                  <InputLabel>Select Token</InputLabel>
+                  <Select
+                    value={selectedToken}
+                    onChange={(e) => setSelectedToken(e.target.value)}
+                    label="Select Token"
+                    sx={{
+                      '& .MuiSelect-icon': { color: '#92E643' },
+                      '& .MuiSvgIcon-root': { color: '#92E643' },
+                    }}
+                  >
+                    {masterTokens && Array.isArray(masterTokens) ? masterTokens.map((token, index) => (
+                      <MenuItem 
+                        key={`${token.mint}_${index}`} 
+                        value={token.mint} 
+                        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                          <Typography variant="body1" sx={{ fontWeight: 'bold', mr: 1 }}>
+                            {token.symbol}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                            {token.name}
+                          </Typography>
+                          <Typography variant="body2" sx={{ ml: 'auto', color: 'success.main' }}>
+                            {token.balance}
+                          </Typography>
+                        </Box>
+                        <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.7rem' }}>
+                          {token.mint.slice(0, 8)}...{token.mint.slice(-8)}
+                        </Typography>
+                      </MenuItem>
+                    )) : null}
+                  </Select>
+                </FormControl>
 
                 <Box sx={{
                   display: 'flex',
                   flexDirection: { xs: 'column', sm: 'row' },
                   alignItems: { xs: 'flex-start', sm: 'center' },
-                  gap: 2,
-                  mb: 2
+                  gap: 2
                 }}>
                   <TextField
                     type="number"
-                    label="SOL Amount"
-                    value={solAmount}
-                    onChange={(e) => setSolAmount(e.target.value)}
-                    size="small"
-                    sx={{
-                      minWidth: '120px',
-                      '& .MuiOutlinedInput-root': {
-                        color: '#fff',
-                        '& fieldset': { borderColor: '#92E643' },
-                      },
-                      '& .MuiInputLabel-root': { color: '#92E643' },
-                    }} />
-                  <ActionButton
-                    variant="contained"
-                    onClick={fundWallets}
-                    disabled={loading || !publicKey || wallets.length === 0 || parseFloat(solAmount) <= 0 || offlineMode || isLoadingData}
-                    startIcon={loading && <CircularProgress size={20} />}
-                  >
-                    Send SOL
-                  </ActionButton>
-                  <ActionButton
-                    variant="contained"
-                    onClick={collectSol}
-                    disabled={loading || !publicKey || wallets.length === 0 || offlineMode || isLoadingData}
-                    startIcon={loading && <CircularProgress size={20} />}
-                  >
-                    Collect SOL
-                  </ActionButton>
-                </Box>
-                {offlineMode && (
-                  <Typography variant="caption" sx={{ color: 'warning.main', display: 'block', mt: 1 }}>
-                    As operações com SOL estão desativadas no modo offline
-                  </Typography>
-                )}
-              </Paper>
-
-              {/* ...rest of the existing UI... */}
-
-              {/* Área para comprar tokens */}
-              <Paper sx={{ p: 3, mb: 3, backgroundColor: 'rgba(0, 0, 0, 0.3)', borderRadius: 2 }}>
-                <Typography variant="h6" gutterBottom sx={{ color: '#92E643' }}>
-                  Send/Collect Tokens
-                </Typography>
-
-                <Box sx={{ mb: 2 }}>
-                  <FormControl
-                    fullWidth
-                    variant="outlined"
-                    sx={{
-                      mb: 2,
-                      '& .MuiOutlinedInput-root': {
-                        color: '#fff',
-                        '& fieldset': { borderColor: '#92E643' },
-                      },
-                      '& .MuiInputLabel-root': { color: '#92E643' },
-                    }}
-                  >
-                    <InputLabel>Select Token</InputLabel>
-                    <Select
-                      value={selectedToken}
-                      onChange={(e) => setSelectedToken(e.target.value)}
-                      label="Select Token"
-                      sx={{
-                        '& .MuiSelect-icon': { color: '#92E643' },
-                        '& .MuiSvgIcon-root': { color: '#92E643' },
-                      }}
-                    >
-                      {masterTokens && Array.isArray(masterTokens) ? masterTokens.map((token, index) => (
-                        <MenuItem
-                          key={`${token.mint}_${index}`}
-                          value={token.mint}
-                          sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                            <Typography variant="body1" sx={{ fontWeight: 'bold', mr: 1 }}>
-                              {token.symbol}
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                              {token.name}
-                            </Typography>
-                            <Typography variant="body2" sx={{ ml: 'auto', color: 'success.main' }}>
-                              {token.balance}
-                            </Typography>
-                          </Box>
-                          <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.7rem' }}>
-                            {token.mint.slice(0, 8)}...{token.mint.slice(-8)}
-                          </Typography>
-                        </MenuItem>
-                      )) : null}
-                    </Select>
-                  </FormControl>
-
-                  <Box sx={{
-                    display: 'flex',
-                    flexDirection: { xs: 'column', sm: 'row' },
-                    alignItems: { xs: 'flex-start', sm: 'center' },
-                    gap: 2
-                  }}>
-                    <TextField
-                      type="number"
-                      label="Token Percentage"
-                      value={tokenPercentage}
-                      onChange={(e) => {
-                        const value = parseFloat(e.target.value);
-                        if (isNaN(value)) {
-                          setTokenPercentage('');
-                        } else if (value > 100) {
-                          setTokenPercentage('100');
-                        } else if (value < 0) {
-                          setTokenPercentage('0');
-                        } else {
-                          setTokenPercentage(e.target.value);
-                        }
-                      } }
-                      size="small"
-                      InputProps={{
-                        endAdornment: <InputAdornment position="end">%</InputAdornment>,
-                      }}
-                      sx={{
-                        minWidth: '140px',
-                        '& .MuiOutlinedInput-root': {
-                          color: '#fff',
-                          '& fieldset': { borderColor: '#92E643' },
-                        },
-                        '& .MuiInputLabel-root': { color: '#92E643' },
-                        '& .MuiInputAdornment-root': { color: '#92E643' },
-                      }} />
-                    <ActionButton
-                      variant="contained"
-                      onClick={buyTokens}
-                      disabled={loading || wallets.length === 0 || !selectedToken || parseFloat(tokenPercentage) <= 0 || offlineMode || isLoadingData}
-                      startIcon={loading && <CircularProgress size={20} />}
-                    >
-                      Send Tokens
-                    </ActionButton>
-                    <ActionButton
-                      variant="contained"
-                      onClick={sellAllTokens}
-                      disabled={!selectedToken || loading || offlineMode || isLoadingData}
-                      startIcon={loading && <CircularProgress size={20} />}
-                    >
-                      Collect Tokens
-                    </ActionButton>
-                  </Box>
-                  {masterTokens && masterTokens.length > 0 && (
-                    <Box sx={{ mt: 2, textAlign: 'center' }}>
-                      <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#92E643' }}>
-                        {masterTokens.length} tokens loaded{offlineMode ? ' (Simulados)' : ''}
-                      </Typography>
-                      {hasMoreTokens && (
-                        <ActionButton
-                          size="small"
-                          variant="outlined"
-                          onClick={loadMoreTokens}
-                          disabled={loadingMoreTokens || isLoadingData}
-                          sx={{ mt: 1 }}
-                        >
-                          {loadingMoreTokens ? (
-                            <CircularProgress size={16} sx={{ mr: 1 }} />
-                          ) : null}
-                          Load More Tokens
-                        </ActionButton>
-                      )}
-                    </Box>
-                  )}
-                  {offlineMode && (
-                    <Typography variant="caption" sx={{ color: 'warning.main', display: 'block', mt: 1 }}>
-                      As operações com tokens estão desativadas no modo offline
-                    </Typography>
-                  )}
-                </Box>
-              </Paper>
-
-              {/* Verificar saldos */}
-              <Box sx={{ mb: 3 }}>
-                <ActionButton
-                  variant="outlined"
-                  onClick={verifyBalances}
-                  disabled={loading || wallets.length === 0 || offlineMode || isLoadingData}
-                  fullWidth
-                >
-                  Verify Balances
-                </ActionButton>
-              </Box>
-
-              {/* Mensagens de status */}
-              {error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {error}
-                </Alert>
-              )}
-
-              {successMessage && (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                  {successMessage}
-                </Alert>
-              )}
-
-              {isProcessing && (
-                <Box sx={{ width: '100%', mb: 2 }}>
-                  <LinearProgress
-                    variant="determinate"
-                    value={progressValue}
-                    sx={{
-                      height: 10,
-                      borderRadius: 5,
-                      backgroundColor: 'rgba(146, 230, 67, 0.2)',
-                      '& .MuiLinearProgress-bar': {
-                        backgroundColor: '#92E643',
-                        borderRadius: 5,
+                    label="Token Percentage"
+                    value={tokenPercentage}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value);
+                      if (isNaN(value)) {
+                        setTokenPercentage('');
+                      } else if (value > 100) {
+                        setTokenPercentage('100');
+                      } else if (value < 0) {
+                        setTokenPercentage('0');
+                      } else {
+                        setTokenPercentage(e.target.value);
                       }
-                    }} />
-                  <Typography variant="caption" sx={{ color: '#92E643', mt: 1 }}>
-                    {progressValue}% Complete
-                  </Typography>
-                </Box>
-              )}
-            </Box><Box sx={{ overflowX: 'auto' }}>
-                <Paper
-                  sx={{
-                    width: '100%',
-                    overflow: 'hidden',
-                    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                    borderRadius: 2
-                  }}
-                >
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      p: 2,
-                      color: '#92E643',
-                      borderBottom: '1px solid rgba(146, 230, 67, 0.2)'
+                    } }
+                    size="small"
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">%</InputAdornment>,
                     }}
-                  >
-                    Wallet List
-                  </Typography>
-
-                  <Box>
-                    <Table aria-label="shadow wallets table" size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell sx={{
-                            fontWeight: 'bold',
-                            color: '#92E643',
-                            borderBottom: '1px solid rgba(146, 230, 67, 0.2)'
-                          }}>
-                            Address
-                          </TableCell>
-                          <TableCell sx={{
-                            fontWeight: 'bold',
-                            color: '#92E643',
-                            borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
-                            width: '80px',
-                            textAlign: 'right'
-                          }}>
-                            SOL
-                          </TableCell>
-                          <TableCell align="center" sx={{
-                            color: '#92E643',
-                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                          }}>
-                            Token Count
-                          </TableCell>
-                          <TableCell sx={{
-                            fontWeight: 'bold',
-                            color: '#92E643',
-                            borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
-                            width: '120px',
-                            textAlign: 'right'
-                          }}>
-                            Total Amount
-                          </TableCell>
-                          <TableCell sx={{
-                            fontWeight: 'bold',
-                            color: '#92E643',
-                            borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
-                            width: '100px',
-                            textAlign: 'right'
-                          }}>
-                            Value
-                          </TableCell>
-                          <TableCell sx={{
-                            fontWeight: 'bold',
-                            color: '#92E643',
-                            width: '100px',
-                            borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
-                            textAlign: 'center'
-                          }}>
-                            Info
-                          </TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {wallets && Array.isArray(wallets) && wallets.length > 0 ? (
-                          wallets
-                            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                            .map((wallet) => {
-                              const primaryToken = wallet?.tokens?.length > 0
-                                ? wallet.tokens.sort((a, b) => {
-                                  if (!a || !a.lastUpdated) return 1;
-                                  if (!b || !b.lastUpdated) return -1;
-                                  return new Date(b.lastUpdated) - new Date(a.lastUpdated);
-                                })[0]
-                                : null;
-
-                              const totalTokenAmount = calculateTotalTokenAmount(wallet);
-                              const activeTokenCount = getActiveTokenCount(wallet);
-
-                              return (
-                                <TableRow
-                                  key={wallet.address}
-                                  sx={{
-                                    '&:last-child td, &:last-child th': { border: 0 },
-                                    '&:hover': { backgroundColor: 'rgba(146, 230, 67, 0.05)' }
-                                  }}
-                                >
-                                  <TableCell
-                                    component="th"
-                                    scope="row"
-                                    sx={{
-                                      color: '#fff',
-                                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                                    }}
-                                  >
-                                    <Box
-                                      sx={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        maxWidth: { xs: '120px', sm: '180px', md: '220px' }
-                                      }}
-                                    >
-                                      <Typography
-                                        variant="body2"
-                                        sx={{
-                                          overflow: 'hidden',
-                                          textOverflow: 'ellipsis',
-                                          whiteSpace: 'nowrap'
-                                        }}
-                                      >
-                                        {wallet.address}
-                                        {wallet.address.startsWith('mock') && (
-                                          <Typography component="span" sx={{ color: 'warning.light', ml: 1, fontSize: '0.7rem' }}>
-                                            (Simulada)
-                                          </Typography>
-                                        )}
-                                      </Typography>
-                                      <IconButton
-                                        size="small"
-                                        onClick={() => copyToClipboard(wallet.address)}
-                                        sx={{ color: '#92E643', ml: 1 }}
-                                      >
-                                        <ContentCopyIcon fontSize="small" />
-                                      </IconButton>
-                                    </Box>
-                                  </TableCell>
-                                  <TableCell
-                                    align="right"
-                                    sx={{
-                                      color: wallet.solBalance > 0 ? '#92E643' : '#fff',
-                                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                                    }}
-                                  >
-                                    {wallet.solBalance ? wallet.solBalance.toFixed(4) : '0'}
-                                  </TableCell>
-                                  <TableCell
-                                    align="center"
-                                    sx={{
-                                      color: activeTokenCount > 0 ? '#92E643' : '#fff',
-                                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                                    }}
-                                  >
-                                    {activeTokenCount}
-                                  </TableCell>
-                                  <TableCell
-                                    align="right"
-                                    sx={{
-                                      color: totalTokenAmount > 0 ? '#92E643' : '#fff',
-                                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                                    }}
-                                  >
-                                    {totalTokenAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                  </TableCell>
-                                  <TableCell
-                                    align="right"
-                                    sx={{
-                                      color: primaryToken?.amount > 0 ? '#92E643' : '#fff',
-                                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                                    }}
-                                  >
-                                    {primaryToken?.symbol || '-'}
-                                  </TableCell>
-                                  <TableCell
-                                    align="center"
-                                    sx={{
-                                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-                                    }}
-                                  >
-                                    <Tooltip title="View Details">
-                                      <IconButton
-                                        size="small"
-                                        onClick={() => openWalletInfo(wallet)}
-                                        sx={{ color: '#92E643' }}
-                                      >
-                                        <InfoIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })
-                        ) : (
-                          <TableRow>
-                            <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
-                              <Typography sx={{ color: '#fff' }}>
-                                {isLoadingData ? 'Carregando carteiras...' : 'Nenhuma carteira encontrada.'}
-                              </Typography>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-
-                    {/* Add Pagination */}
-                    <TablePagination
-                      rowsPerPageOptions={[5, 10, 20, 30]}
-                      component="div"
-                      count={wallets && Array.isArray(wallets) ? wallets.length : 0}
-                      rowsPerPage={rowsPerPage}
-                      page={page}
-                      onPageChange={handleChangePage}
-                      onRowsPerPageChange={handleChangeRowsPerPage}
-                      sx={{
+                    sx={{
+                      minWidth: '140px',
+                      '& .MuiOutlinedInput-root': {
                         color: '#fff',
-                        '& .MuiTablePagination-selectIcon': {
-                          color: '#92E643',
-                        },
-                        '& .MuiTablePagination-select': {
-                          color: '#92E643',
-                        },
-                        '& .MuiTablePagination-actions': {
-                          color: '#92E643',
-                        },
-                        '& .MuiIconButton-root.Mui-disabled': {
-                          color: 'rgba(146, 230, 67, 0.3)',
-                        },
-                      }} />
-                    {hasMoreWallets && !offlineMode && (
-                      <Box sx={{ textAlign: 'center', py: 2, borderTop: '1px solid rgba(146, 230, 67, 0.2)' }}>
-                        <ActionButton
-                          size="small"
-                          variant="outlined"
-                          onClick={loadMoreWallets}
-                          disabled={loadingMoreWallets || isLoadingData}
-                          startIcon={loadingMoreWallets && <CircularProgress size={16} />}
-                        >
-                          Load More Wallets
-                        </ActionButton>
-                      </Box>
+                        '& fieldset': { borderColor: '#92E643' },
+                      },
+                      '& .MuiInputLabel-root': { color: '#92E643' },
+                      '& .MuiInputAdornment-root': { color: '#92E643' },
+                    }} />
+                  <ActionButton
+                    variant="contained"
+                    onClick={buyTokens}
+                    disabled={loading || wallets.length === 0 || !selectedToken || parseFloat(tokenPercentage) <= 0}
+                    startIcon={loading && <CircularProgress size={20} />}
+                  >
+                    Send Tokens
+                  </ActionButton>
+                  <ActionButton
+                    variant="contained"
+                    onClick={sellAllTokens}
+                    disabled={!selectedToken || loading}
+                    startIcon={loading && <CircularProgress size={20} />}
+                  >
+                    Collect Tokens
+                  </ActionButton>
+                </Box>
+                {masterTokens && masterTokens.length > 0 && (
+                  <Box sx={{ mt: 2, textAlign: 'center' }}>
+                    <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#92E643' }}>
+                      {masterTokens.length} tokens loaded
+                    </Typography>
+                    {hasMoreTokens && (
+                      <ActionButton
+                        size="small"
+                        variant="outlined"
+                        onClick={loadMoreTokens}
+                        disabled={loadingMoreTokens}
+                        sx={{ mt: 1 }}
+                      >
+                        {loadingMoreTokens ? (
+                          <CircularProgress size={16} sx={{ mr: 1 }} />
+                        ) : null}
+                        Load More Tokens
+                      </ActionButton>
                     )}
                   </Box>
-                </Paper>
-              </Box></>
-      )}
-
-      <Dialog
-        open={walletDialogOpen}
-        onClose={() => setWalletDialogOpen(false)}
-        PaperProps={{
-          sx: {
-            backgroundColor: '#111',
-            color: '#fff',
-            border: '1px solid #92E643',
-            borderRadius: 2,
-            maxWidth: '700px',
-            width: '100%'
-          }
-        }}
-      >
-        <DialogTitle sx={{
-          borderBottom: '1px solid rgba(146, 230, 67, 0.3)',
-          color: '#92E643',
-          fontWeight: 'bold',
-        }}>
-          Wallet Details
-        </DialogTitle>
-        <DialogContent sx={{ p: 3, mt: 2 }}>
-          {selectedWallet && (
-            <>
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle2" sx={{ color: '#92E643', mb: 1 }}>
-                  Address
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-                    {selectedWallet.address}
-                  </Typography>
-                  <Box sx={{ display: 'flex', ml: 2 }}>
-                    <Tooltip title="Copy Address">
-                      <IconButton
-                        size="small"
-                        onClick={() => copyToClipboard(selectedWallet.address)}
-                        sx={{ color: '#92E643', mr: 1 }}
-                      >
-                        <ContentCopyIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="View in Solana Explorer">
-                      <IconButton
-                        size="small"
-                        component="a"
-                        href={`https://explorer.solana.com/address/${selectedWallet.address}?cluster=devnet`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        sx={{ color: '#92E643' }}
-                      >
-                        <InfoIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-                </Box>
-              </Box>
-
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle2" sx={{ color: '#92E643', mb: 1 }}>
-                  SOL Balance
-                </Typography>
-                <Typography variant="body1" sx={{ fontWeight: 'bold', color: selectedWallet.solBalance > 0 ? '#92E643' : '#fff' }}>
-                  {selectedWallet.solBalance ? selectedWallet.solBalance.toFixed(6) : '0'} SOL
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle2" sx={{ color: '#92E643', mb: 1 }}>
-                  Tokens ({getActiveTokenCount(selectedWallet)})
-                </Typography>
-
-                {selectedWallet.tokens && Array.isArray(selectedWallet.tokens) && selectedWallet.tokens.length > 0 ? (
-                  <Table size="small" sx={{
-                    backgroundColor: 'rgba(0,0,0,0.2)',
-                    borderRadius: 1,
-                    overflow: 'hidden',
-                    '& th, & td': {
-                      border: 'none',
-                      borderBottom: '1px solid rgba(146, 230, 67, 0.1)',
-                      padding: '8px 16px',
-                    },
-                  }}>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell sx={{ color: '#92E643', fontWeight: 'bold' }}>Token</TableCell>
-                        <TableCell sx={{ color: '#92E643', fontWeight: 'bold' }} align="right">Quantity</TableCell>
-                        <TableCell sx={{ color: '#92E643', fontWeight: 'bold' }} align="right">Symbol</TableCell>
-                        <TableCell sx={{ color: '#92E643', fontWeight: 'bold' }} align="center">Links</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {selectedWallet.tokens.map((token, index) => (
-                        <TableRow key={index}>
-                          <TableCell
-                            sx={{
-                              color: '#fff',
-                              maxWidth: '180px',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            <Tooltip title={`${token.name || 'Unknown'} (${token.mint})`}>
-                              <Typography variant="body2">
-                                {token.name || 'Unknown'}
-                              </Typography>
-                            </Tooltip>
-                          </TableCell>
-                          <TableCell
-                            align="right"
-                            sx={{ color: (token.amount || 0) > 0 ? '#92E643' : '#fff' }}
-                          >
-                            {typeof token.amount === 'number' 
-                              ? token.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })
-                              : '0'}
-                          </TableCell>
-                          <TableCell
-                            align="right"
-                            sx={{ color: '#92E643' }}
-                          >
-                            {token.symbol || 'Unknown'}
-                          </TableCell>
-                          <TableCell align="center">
-                            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
-                              <Tooltip title="View in Solana Explorer">
-                                <IconButton
-                                  size="small"
-                                  component="a"
-                                  href={`https://explorer.solana.com/address/${token.mint}?cluster=devnet`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  sx={{ color: '#92E643' }}
-                                >
-                                  <LaunchIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="View in Solscan">
-                                <IconButton
-                                  size="small"
-                                  component="a"
-                                  href={`https://solscan.io/token/${token.mint}?cluster=devnet`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  sx={{ color: '#92E643' }}
-                                >
-                                  <img
-                                    src="https://solscan.io/favicon.ico"
-                                    alt="SolScan"
-                                    style={{ width: 16, height: 16 }}
-                                  />
-                                </IconButton>
-                              </Tooltip>
-                            </Box>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <Typography variant="body2" sx={{ color: '#aaa', fontStyle: 'italic' }}>
-                    No tokens found for this wallet.
-                  </Typography>
                 )}
               </Box>
-            </>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(146, 230, 67, 0.3)' }}>
-          <ActionButton onClick={() => setWalletDialogOpen(false)}>
-            Close
-          </ActionButton>
-        </DialogActions>
-      </Dialog>
+            </Paper>
+
+            <Box sx={{ mb: 3 }}>
+              <ActionButton
+                variant="outlined"
+                onClick={verifyBalances}
+                disabled={loading || wallets.length === 0}
+                fullWidth
+              >
+                Verify Balances
+              </ActionButton>
+            </Box>
+
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+
+            {successMessage && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                {successMessage}
+              </Alert>
+            )}
+
+            {isProcessing && (
+              <Box sx={{ width: '100%', mb: 2 }}>
+                <LinearProgress
+                  variant="determinate"
+                  value={progressValue}
+                  sx={{
+                    height: 10,
+                    borderRadius: 5,
+                    backgroundColor: 'rgba(146, 230, 67, 0.2)',
+                    '& .MuiLinearProgress-bar': {
+                      backgroundColor: '#92E643',
+                      borderRadius: 5,
+                    }
+                  }} />
+                <Typography variant="caption" sx={{ color: '#92E643', mt: 1 }}>
+                  {progressValue}% Complete
+                </Typography>
+              </Box>
+            )}
+          </Box>
+
+          <Box sx={{ overflowX: 'auto' }}>
+            <Paper
+              sx={{
+                width: '100%',
+                overflow: 'hidden',
+                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                borderRadius: 2
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  p: 2,
+                  color: '#92E643',
+                  borderBottom: '1px solid rgba(146, 230, 67, 0.2)'
+                }}
+              >
+                Wallet List
+              </Typography>
+
+              <Box>
+                <Table aria-label="shadow wallets table" size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{
+                        fontWeight: 'bold',
+                        color: '#92E643',
+                        borderBottom: '1px solid rgba(146, 230, 67, 0.2)'
+                      }}>
+                        Address
+                      </TableCell>
+                      <TableCell sx={{
+                        fontWeight: 'bold',
+                        color: '#92E643',
+                        borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
+                        width: '80px',
+                        textAlign: 'right'
+                      }}>
+                        SOL
+                      </TableCell>
+                      <TableCell align="center" sx={{
+                        color: '#92E643',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                      }}>
+                        Token Count
+                      </TableCell>
+                      <TableCell sx={{
+                        fontWeight: 'bold',
+                        color: '#92E643',
+                        borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
+                        width: '120px',
+                        textAlign: 'right'
+                      }}>
+                        Total Amount
+                      </TableCell>
+                      <TableCell sx={{
+                        fontWeight: 'bold',
+                        color: '#92E643',
+                        borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
+                        width: '100px',
+                        textAlign: 'right'
+                      }}>
+                        Value
+                      </TableCell>
+                      <TableCell sx={{
+                        fontWeight: 'bold',
+                        color: '#92E643',
+                        width: '100px',
+                        borderBottom: '1px solid rgba(146, 230, 67, 0.2)',
+                        textAlign: 'center'
+                      }}>
+                        Info
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {wallets && Array.isArray(wallets) && wallets
+                      .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                      .map((wallet) => {
+                        const primaryToken = wallet?.tokens?.length > 0 
+                          ? wallet.tokens.sort((a, b) => {
+                              if (!a || !a.lastUpdated) return 1;
+                              if (!b || !b.lastUpdated) return -1;
+                              return new Date(b.lastUpdated) - new Date(a.lastUpdated);
+                            })[0]
+                          : null;
+
+                        const totalTokenAmount = calculateTotalTokenAmount(wallet);
+                        const activeTokenCount = getActiveTokenCount(wallet);
+
+                        return (
+                          <TableRow
+                            key={wallet.address}
+                            sx={{
+                              '&:last-child td, &:last-child th': { border: 0 },
+                              '&:hover': { backgroundColor: 'rgba(146, 230, 67, 0.05)' }
+                            }}
+                          >
+                            <TableCell
+                              component="th"
+                              scope="row"
+                              sx={{
+                                color: '#fff',
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                              }}
+                            >
+                              <Box
+                                sx={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  maxWidth: { xs: '120px', sm: '180px', md: '220px' }
+                                }}
+                              >
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {wallet.address}
+                                </Typography>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => copyToClipboard(wallet.address)}
+                                  sx={{ color: '#92E643', ml: 1 }}
+                                >
+                                  <ContentCopyIcon fontSize="small" />
+                                </IconButton>
+                              </Box>
+                            </TableCell>
+                            <TableCell
+                              align="right"
+                              sx={{
+                                color: wallet.solBalance > 0 ? '#92E643' : '#fff',
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                              }}
+                            >
+                              {wallet.solBalance ? wallet.solBalance.toFixed(4) : '0'}
+                            </TableCell>
+                            <TableCell
+                              align="center"
+                              sx={{
+                                color: activeTokenCount > 0 ? '#92E643' : '#fff',
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                              }}
+                            >
+                              {activeTokenCount}
+                            </TableCell>
+                            <TableCell
+                              align="right"
+                              sx={{
+                                color: totalTokenAmount > 0 ? '#92E643' : '#fff',
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                              }}
+                            >
+                              {totalTokenAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell
+                              align="right"
+                              sx={{
+                                color: primaryToken?.amount > 0 ? '#92E643' : '#fff',
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                              }}
+                            >
+                              {primaryToken?.symbol || '-'}
+                            </TableCell>
+                            <TableCell
+                              align="center"
+                              sx={{
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                              }}
+                            >
+                              <Tooltip title="View Details">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => openWalletInfo(wallet)}
+                                  sx={{ color: '#92E643' }}
+                                >
+                                  <InfoIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                  </TableBody>
+                </Table>
+
+                <TablePagination
+                  rowsPerPageOptions={[5, 10, 20, 30]}
+                  component="div"
+                  count={wallets && Array.isArray(wallets) ? wallets.length : 0}
+                  rowsPerPage={rowsPerPage}
+                  page={page}
+                  onPageChange={handleChangePage}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                  sx={{
+                    color: '#fff',
+                    '& .MuiTablePagination-selectIcon': {
+                      color: '#92E643',
+                    },
+                    '& .MuiTablePagination-select': {
+                      color: '#92E643',
+                    },
+                    '& .MuiTablePagination-actions': {
+                      color: '#92E643',
+                    },
+                    '& .MuiIconButton-root.Mui-disabled': {
+                      color: 'rgba(146, 230, 67, 0.3)',
+                    },
+                  }} />
+                {hasMoreWallets && (
+                  <Box sx={{ textAlign: 'center', py: 2, borderTop: '1px solid rgba(146, 230, 67, 0.2)' }}>
+                    <ActionButton
+                      size="small"
+                      variant="outlined"
+                      onClick={loadMoreWallets}
+                      disabled={loadingMoreWallets}
+                      startIcon={loadingMoreWallets && <CircularProgress size={16} />}
+                    >
+                      Load More Wallets
+                    </ActionButton>
+                  </Box>
+                )}
+              </Box>
+            </Paper>
+          </Box>
+
+          <Dialog
+            open={walletDialogOpen}
+            onClose={() => setWalletDialogOpen(false)}
+            PaperProps={{
+              sx: {
+                backgroundColor: '#111',
+                color: '#fff',
+                border: '1px solid #92E643',
+                borderRadius: 2,
+                maxWidth: '700px',
+                width: '100%'
+              }
+            }}
+          >
+            <DialogTitle sx={{
+              borderBottom: '1px solid rgba(146, 230, 67, 0.3)',
+              color: '#92E643',
+              fontWeight: 'bold',
+            }}>
+              Wallet Details
+            </DialogTitle>
+            <DialogContent sx={{ p: 3, mt: 2 }}>
+              {selectedWallet && (
+                <>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle2" sx={{ color: '#92E643', mb: 1 }}>
+                      Address
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
+                        {selectedWallet.address}
+                      </Typography>
+                      <Box sx={{ display: 'flex', ml: 2 }}>
+                        <Tooltip title="Copy Address">
+                          <IconButton
+                            size="small"
+                            onClick={() => copyToClipboard(selectedWallet.address)}
+                            sx={{ color: '#92E643', mr: 1 }}
+                          >
+                            <ContentCopyIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="View in Solana Explorer">
+                          <IconButton
+                            size="small"
+                            component="a"
+                            href={`https://explorer.solana.com/address/${selectedWallet.address}?cluster=devnet`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ color: '#92E643' }}
+                          >
+                            <InfoIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle2" sx={{ color: '#92E643', mb: 1 }}>
+                      SOL Balance
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 'bold', color: selectedWallet.solBalance > 0 ? '#92E643' : '#fff' }}>
+                      {selectedWallet.solBalance ? selectedWallet.solBalance.toFixed(6) : '0'} SOL
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle2" sx={{ color: '#92E643', mb: 1 }}>
+                      Tokens ({getActiveTokenCount(selectedWallet)})
+                    </Typography>
+
+                    {selectedWallet.tokens && Array.isArray(selectedWallet.tokens) && selectedWallet.tokens.length > 0 ? (
+                      <Table size="small" sx={{
+                        backgroundColor: 'rgba(0,0,0,0.2)',
+                        borderRadius: 1,
+                        overflow: 'hidden',
+                        '& th, & td': {
+                          border: 'none',
+                          borderBottom: '1px solid rgba(146, 230, 67, 0.1)',
+                          padding: '8px 16px',
+                        },
+                      }}>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell sx={{ color: '#92E643', fontWeight: 'bold' }}>Token</TableCell>
+                            <TableCell sx={{ color: '#92E643', fontWeight: 'bold' }} align="right">Quantity</TableCell>
+                            <TableCell sx={{ color: '#92E643', fontWeight: 'bold' }} align="right">Symbol</TableCell>
+                            <TableCell sx={{ color: '#92E643', fontWeight: 'bold' }} align="center">Links</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {selectedWallet.tokens.map((token, index) => (
+                            <TableRow key={index}>
+                              <TableCell
+                                sx={{
+                                  color: '#fff',
+                                  maxWidth: '180px',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                <Tooltip title={`${token.name || 'Unknown'} (${token.mint})`}>
+                                  <Typography variant="body2">
+                                    {token.name || 'Unknown'}
+                                  </Typography>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell
+                                align="right"
+                                sx={{ color: (token.amount || 0) > 0 ? '#92E643' : '#fff' }}
+                              >
+                                {typeof token.amount === 'number' 
+                                  ? token.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                                  : '0'}
+                              </TableCell>
+                              <TableCell
+                                align="right"
+                                sx={{ color: '#92E643' }}
+                              >
+                                {token.symbol || 'Unknown'}
+                              </TableCell>
+                              <TableCell align="center">
+                                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
+                                  <Tooltip title="View in Solana Explorer">
+                                    <IconButton
+                                      size="small"
+                                      component="a"
+                                      href={`https://explorer.solana.com/address/${token.mint}?cluster=devnet`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      sx={{ color: '#92E643' }}
+                                    >
+                                      <LaunchIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="View in Solscan">
+                                    <IconButton
+                                      size="small"
+                                      component="a"
+                                      href={`https://solscan.io/token/${token.mint}?cluster=devnet`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      sx={{ color: '#92E643' }}
+                                    >
+                                      <img
+                                        src="https://solscan.io/favicon.ico"
+                                        alt="SolScan"
+                                        style={{ width: 16, height: 16 }}
+                                      />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <Typography variant="body2" sx={{ color: '#aaa', fontStyle: 'italic' }}>
+                        No tokens found for this wallet.
+                      </Typography>
+                    )}
+                  </Box>
+                </>
+              )}
+            </DialogContent>
+            <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(146, 230, 67, 0.3)' }}>
+              <ActionButton onClick={() => setWalletDialogOpen(false)}>
+                Close
+              </ActionButton>
+            </DialogActions>
+          </Dialog>
+        </>
+      )}
     </ChaosPaper>
-  </>
   );
 };
 
