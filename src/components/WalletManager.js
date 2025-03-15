@@ -90,57 +90,125 @@ const WalletManager = () => {
   const [hasMoreWallets, setHasMoreWallets] = useState(true);
   const [loadingMoreWallets, setLoadingMoreWallets] = useState(false);
 
-  // Função modificada para buscar tokens da carteira mestra com retentativas
+  // Add this state for offline mode
+  const [offlineMode, setOfflineMode] = useState(false);
+  
+  // Add mock data generation function
+  const generateMockData = (count = 5) => {
+    const mockWallets = [];
+    for (let i = 0; i < count; i++) {
+      mockWallets.push({
+        address: `mock${i}${Date.now().toString(36)}${Math.random().toString(36).substring(2, 7)}`,
+        solBalance: parseFloat((Math.random() * 0.5).toFixed(4)),
+        tokenBalance: Math.floor(Math.random() * 1000),
+        tokens: [
+          {
+            mint: "mocktoken1",
+            amount: Math.floor(Math.random() * 100),
+            symbol: "MOCK",
+            name: "Mock Token"
+          }
+        ]
+      });
+    }
+    return mockWallets;
+  };
+
+  // Modified fetchMasterTokens function with offline mode support
   const fetchMasterTokens = async (nextPage = 0, retryCount = 0) => {
     if (!publicKey) return;
     
     try {
       setLoadingMoreTokens(nextPage > 0);
       
-      console.log(`Buscando tokens para ${publicKey.toString()} (página ${nextPage})`);
-      
-      // Adicionar timeout maior para evitar rejeição prematura
-      const response = await axios.get(
-        `${process.env.REACT_APP_API_URL}/api/master-tokens/${publicKey.toString()}`,
-        { 
-          params: { page: nextPage, pageSize: 10 }, // Reduzido para 10 tokens por página
-          timeout: 10000 // Timeout de 10 segundos
-        }
-      );
-      
-      // Se a resposta indicar que os tokens ainda estão carregando, tentar novamente após delay
-      if (response.data.pagination?.loading) {
-        console.log("Tokens ainda carregando, tentando novamente em 3 segundos...");
-        setTimeout(() => fetchMasterTokens(nextPage, retryCount), 3000);
+      // Se estivermos no modo offline, retornar dados simulados
+      if (offlineMode) {
+        setTimeout(() => {
+          setMasterTokens([
+            {
+              mint: "mocktoken1",
+              balance: 10000,
+              decimals: 9,
+              symbol: "MOCK",
+              name: "Mock Token (Offline Mode)"
+            },
+            {
+              mint: "mocktoken2",
+              balance: 5000,
+              decimals: 9,
+              symbol: "TEST",
+              name: "Test Token (Offline Mode)"
+            }
+          ]);
+          setHasMoreTokens(false);
+          setLoadingMoreTokens(false);
+        }, 500);
         return;
       }
       
+      console.log(`Buscando tokens para ${publicKey.toString()} (página ${nextPage})`);
+      
+      const response = await axios.get(
+        `${process.env.REACT_APP_API_URL}/api/master-tokens/${publicKey.toString()}`,
+        { 
+          params: { page: nextPage, pageSize: 10 },
+          timeout: 15000
+        }
+      );
+      
+      // Guarantee we have an array of tokens, even if empty
+      const tokens = response.data?.tokens || [];
+      
+      // Filter tokens with balance if we have tokens
+      const tokensWithBalance = tokens.filter(token => 
+        token && typeof token.balance === 'number' && token.balance > 0
+      );
+      
       // Se este é a primeira página, substituir tokens. Caso contrário, adicionar
       if (nextPage === 0) {
-        setMasterTokens(response.data.tokens);
+        setMasterTokens(tokensWithBalance);
       } else {
-        setMasterTokens(prev => [...prev, ...response.data.tokens]);
+        setMasterTokens(prev => [...prev, ...tokensWithBalance]);
       }
       
-      // Atualizar estado de paginação
+      // Atualizar estado de paginação baseado na resposta
       setTokenPage(nextPage);
-      setHasMoreTokens(response.data.pagination?.hasMore || false);
+      setHasMoreTokens(response.data?.pagination?.hasMore || false);
+      
+      // Reset offline mode if successful
+      if (offlineMode) {
+        setOfflineMode(false);
+        setError(null);
+      }
     } catch (error) {
       console.error('Failed to fetch master tokens:', error);
       
-      // Melhorar feedback de erro para o usuário
+      // Database unavailable - switch to offline mode
       if (error.response?.status === 503) {
-        // Erro específico de conexão de banco de dados
-        setError('O banco de dados está temporariamente indisponível. Isso pode ocorrer devido a restrições de IP no MongoDB Atlas. Tente novamente mais tarde ou contate o suporte.');
-      } else if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
+        if (!offlineMode) {
+          console.log("MongoDB unavailable - switching to offline mode");
+          setOfflineMode(true);
+          setError('Banco de dados indisponível. Usando modo offline com dados simulados. Algumas funcionalidades serão limitadas.');
+          // Set mock data in offline mode
+          setMasterTokens([
+            {
+              mint: "mocktoken1",
+              balance: 10000,
+              decimals: 9,
+              symbol: "MOCK",
+              name: "Mock Token (Offline Mode)"
+            }
+          ]);
+          setHasMoreTokens(false);
+        }
+      } else if (retryCount < 3 && (error.response?.status === 408 || error.response?.status === 504)) {
         console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
         setTimeout(() => fetchMasterTokens(nextPage, retryCount + 1), 2000);
-      } else if (retryCount >= 3) {
-        // Limite de tentativas atingido, mostrar tokens vazios e não quebrar a interface
+      } else {
+        // Keep existing tokens if it's not the first page
         setMasterTokens(prevTokens => nextPage === 0 ? [] : prevTokens);
         setHasMoreTokens(false);
         
-        // Mensagem de erro mais específica
         if (error.code === 'ECONNABORTED') {
           setError('Tempo limite atingido ao buscar tokens. O servidor pode estar sobrecarregado.');
         } else {
@@ -161,10 +229,45 @@ const WalletManager = () => {
     fetchWallets(0); // Reset to first page
   }, []);
 
-  // Função modificada para buscar carteiras com retentativas
+  // Modified fetchWallets function with offline mode support
   const fetchWallets = async (nextPage = 0, retryCount = 0) => {
     try {
       setLoadingMoreWallets(nextPage > 0);
+      
+      // If we're in offline mode, return mock data
+      if (offlineMode) {
+        setTimeout(() => {
+          const mockWallets = generateMockData(10);
+          setWallets(mockWallets);
+          setWalletStats({
+            totalWallets: mockWallets.length,
+            fromDatabase: false,
+            newlyCreated: mockWallets.length
+          });
+          setHasMoreWallets(false);
+          setLoadingMoreWallets(false);
+          setError('Usando dados simulados: o banco de dados não está disponível. Reconectando...');
+        }, 500);
+        
+        // Try to reconnect to the database periodically
+        setTimeout(() => {
+          console.log("Tentando reconectar ao banco de dados...");
+          axios.get(`${process.env.REACT_APP_API_URL}/health`)
+            .then(response => {
+              if (response.data.database === 'connected') {
+                console.log("Banco de dados reconectado!");
+                setOfflineMode(false);
+                fetchWallets(0);
+                fetchMasterTokens();
+              }
+            })
+            .catch(err => {
+              console.log("Banco de dados ainda indisponível:", err.message);
+            });
+        }, 30000); // Try again in 30 seconds
+        
+        return;
+      }
       
       console.log(`Buscando carteiras (página ${nextPage})`);
       
@@ -191,15 +294,33 @@ const WalletManager = () => {
       setWalletPage(nextPage);
       setHasMoreWallets(response.data.pagination?.hasMore || false);
       
+      // Reset offline mode if successful
+      if (offlineMode) {
+        setOfflineMode(false);
+      }
+      
       // Limpar qualquer mensagem de erro anterior
       setError(null);
     } catch (error) {
       console.error('Failed to fetch wallets:', error);
       
-      // Melhorar feedback de erro para o usuário
+      // Database unavailable - switch to offline mode
       if (error.response?.status === 503) {
-        // Erro específico de conexão de banco de dados
-        setError('O banco de dados está temporariamente indisponível. Isso pode ocorrer devido a restrições de IP no MongoDB Atlas. Verifique as configurações de whitelist do MongoDB ou contate o suporte.');
+        if (!offlineMode) {
+          console.log("MongoDB unavailable - switching to offline mode");
+          setOfflineMode(true);
+          setError('Banco de dados indisponível. Usando modo offline com dados simulados. Algumas funcionalidades serão limitadas.');
+          
+          // Set mock data
+          const mockWallets = generateMockData(10);
+          setWallets(mockWallets);
+          setWalletStats({
+            totalWallets: mockWallets.length,
+            fromDatabase: false,
+            newlyCreated: mockWallets.length
+          });
+          setHasMoreWallets(false);
+        }
       } else if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
         console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
         setTimeout(() => fetchWallets(nextPage, retryCount + 1), 2000);
@@ -890,8 +1011,11 @@ const WalletManager = () => {
 
   // Calculate total token amount for a wallet - already properly implemented
   const calculateTotalTokenAmount = (wallet) => {
-    if (!wallet.tokens || wallet.tokens.length === 0) return 0;
-    return wallet.tokens.reduce((sum, token) => sum + (token.amount || 0), 0);
+    if (!wallet || !wallet.tokens || !Array.isArray(wallet.tokens)) return 0;
+    return wallet.tokens.reduce((sum, token) => {
+      if (!token || typeof token.amount !== 'number') return sum;
+      return sum + token.amount;
+    }, 0);
   };
 
   const handleChangePage = (event, newPage) => {
@@ -905,8 +1029,8 @@ const WalletManager = () => {
 
   // Add this function alongside your other utility functions
   const getActiveTokenCount = (wallet) => {
-    if (!wallet.tokens || wallet.tokens.length === 0) return 0;
-    return wallet.tokens.filter(t => t.amount > 0).length;
+    if (!wallet || !wallet.tokens || !Array.isArray(wallet.tokens)) return 0;
+    return wallet.tokens.filter(t => t && typeof t.amount === 'number' && t.amount > 0).length;
   };
 
   // Add a loadMoreTokens function
@@ -1038,8 +1162,12 @@ const WalletManager = () => {
                   '& .MuiSvgIcon-root': { color: '#92E643' },
                 }}
               >
-                {masterTokens.map((token) => (
-                  <MenuItem key={token.mint} value={token.mint} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                {masterTokens && Array.isArray(masterTokens) ? masterTokens.map((token, index) => (
+                  <MenuItem 
+                    key={`${token.mint}_${index}`} 
+                    value={token.mint} 
+                    sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
+                  >
                     <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                       <Typography variant="body1" sx={{ fontWeight: 'bold', mr: 1 }}>
                         {token.symbol}
@@ -1055,7 +1183,7 @@ const WalletManager = () => {
                       {token.mint.slice(0, 8)}...{token.mint.slice(-8)}
                     </Typography>
                   </MenuItem>
-                ))}
+                )) : null}
               </Select>
             </FormControl>
 
@@ -1111,7 +1239,7 @@ const WalletManager = () => {
                 Collect Tokens
               </ActionButton>
             </Box>
-            {masterTokens.length > 0 && (
+            {masterTokens && masterTokens.length > 0 && (
               <Box sx={{ mt: 2, textAlign: 'center' }}>
                 <Typography variant="caption" sx={{ display: 'block', mb: 1, color: '#92E643' }}>
                   {masterTokens.length} tokens loaded
@@ -1222,7 +1350,7 @@ const WalletManager = () => {
                     SOL
                   </TableCell>
                   <TableCell align="center" sx={{
-                    color: getActiveTokenCount(wallets) > 0 ? '#92E643' : '#fff',
+                    color: '#92E643',
                     borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                   }}>
                     Token Count
@@ -1257,16 +1385,19 @@ const WalletManager = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {wallets
+                {wallets && Array.isArray(wallets) && wallets
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((wallet) => {
-                    // Pegar o token principal se existir (primeiro do array ou o mais recente)
-                    const primaryToken = wallet.tokens && wallet.tokens.length > 0
-                      ? wallet.tokens.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated))[0]
+                    const primaryToken = wallet?.tokens?.length > 0 
+                      ? wallet.tokens.sort((a, b) => {
+                          if (!a || !a.lastUpdated) return 1;
+                          if (!b || !b.lastUpdated) return -1;
+                          return new Date(b.lastUpdated) - new Date(a.lastUpdated);
+                        })[0]
                       : null;
 
-                    // Calculate total amount across all tokens
                     const totalTokenAmount = calculateTotalTokenAmount(wallet);
+                    const activeTokenCount = getActiveTokenCount(wallet);
 
                     return (
                       <TableRow
@@ -1323,11 +1454,11 @@ const WalletManager = () => {
                         <TableCell
                           align="center"
                           sx={{
-                            color: getActiveTokenCount(wallet) > 0 ? '#92E643' : '#fff',
+                            color: activeTokenCount > 0 ? '#92E643' : '#fff',
                             borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                           }}
                         >
-                          {getActiveTokenCount(wallet)}
+                          {activeTokenCount}
                         </TableCell>
                         <TableCell
                           align="right"
@@ -1341,11 +1472,11 @@ const WalletManager = () => {
                         <TableCell
                           align="right"
                           sx={{
-                            color: primaryToken && primaryToken.amount > 0 ? '#92E643' : '#fff',
+                            color: primaryToken?.amount > 0 ? '#92E643' : '#fff',
                             borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                           }}
                         >
-                          {primaryToken ? `${primaryToken.symbol || '-'}` : '-'}
+                          {primaryToken?.symbol || '-'}
                         </TableCell>
                         <TableCell
                           align="center"
@@ -1373,7 +1504,7 @@ const WalletManager = () => {
             <TablePagination
               rowsPerPageOptions={[5, 10, 20, 30]}
               component="div"
-              count={wallets.length}
+              count={wallets && Array.isArray(wallets) ? wallets.length : 0}
               rowsPerPage={rowsPerPage}
               page={page}
               onPageChange={handleChangePage}
@@ -1482,7 +1613,7 @@ const WalletManager = () => {
                   Tokens ({getActiveTokenCount(selectedWallet)})
                 </Typography>
 
-                {selectedWallet.tokens && selectedWallet.tokens.length > 0 ? (
+                {selectedWallet.tokens && Array.isArray(selectedWallet.tokens) && selectedWallet.tokens.length > 0 ? (
                   <Table size="small" sx={{
                     backgroundColor: 'rgba(0,0,0,0.2)',
                     borderRadius: 1,
@@ -1513,23 +1644,25 @@ const WalletManager = () => {
                               whiteSpace: 'nowrap'
                             }}
                           >
-                            <Tooltip title={`${token.name} (${token.mint})`}>
+                            <Tooltip title={`${token.name || 'Unknown'} (${token.mint})`}>
                               <Typography variant="body2">
-                                {token.name}
+                                {token.name || 'Unknown'}
                               </Typography>
                             </Tooltip>
                           </TableCell>
                           <TableCell
                             align="right"
-                            sx={{ color: token.amount > 0 ? '#92E643' : '#fff' }}
+                            sx={{ color: (token.amount || 0) > 0 ? '#92E643' : '#fff' }}
                           >
-                            {token.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            {typeof token.amount === 'number' 
+                              ? token.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                              : '0'}
                           </TableCell>
                           <TableCell
                             align="right"
                             sx={{ color: '#92E643' }}
                           >
-                            {token.symbol}
+                            {token.symbol || 'Unknown'}
                           </TableCell>
                           <TableCell align="center">
                             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
@@ -1542,10 +1675,7 @@ const WalletManager = () => {
                                   rel="noopener noreferrer"
                                   sx={{ color: '#92E643' }}
                                 >
-                                  <img
-                                    src="./SolanaExplorer.png"
-                                    alt="SolScan"
-                                    style={{ width: 18, height: 18, borderRadius: 8 }} />
+                                  <LaunchIcon fontSize="small" />
                                 </IconButton>
                               </Tooltip>
                               <Tooltip title="View in Solscan">
