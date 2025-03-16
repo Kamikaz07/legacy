@@ -25,12 +25,18 @@ import {
   TextField,
   LinearProgress,
   InputAdornment,
-  TablePagination
+  TablePagination,
+  Chip
 } from '@mui/material';
 import { styled } from '@mui/system';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import InfoIcon from '@mui/icons-material/Info';
 import LaunchIcon from '@mui/icons-material/Launch';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import SyncIcon from '@mui/icons-material/Sync';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { Transaction, PublicKey } from '@solana/web3.js';
 
@@ -87,8 +93,9 @@ const WalletManager = () => {
   const [walletPage, setWalletPage] = useState(0);
   const [hasMoreWallets, setHasMoreWallets] = useState(true);
   const [loadingMoreWallets, setLoadingMoreWallets] = useState(false);
-  const [offlineMode, setOfflineMode] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [dbStatus, setDbStatus] = useState('unknown'); // 'connected', 'disconnected', 'checking'
+  const [isCheckingDb, setIsCheckingDb] = useState(false);
 
   const generateMockData = (count = 5) => {
     const mockWallets = [];
@@ -115,39 +122,6 @@ const WalletManager = () => {
     try {
       setLoadingMoreWallets(nextPage > 0);
 
-      if (offlineMode) {
-        setTimeout(() => {
-          const mockWallets = generateMockData(10);
-          setWallets(mockWallets);
-          setWalletStats({
-            totalWallets: mockWallets.length,
-            fromDatabase: false,
-            newlyCreated: mockWallets.length
-          });
-          setHasMoreWallets(false);
-          setLoadingMoreWallets(false);
-          setError('Usando dados simulados: o banco de dados não está disponível. Reconectando...');
-        }, 500);
-
-        setTimeout(() => {
-          console.log("Tentando reconectar ao banco de dados...");
-          axios.get(`${process.env.REACT_APP_API_URL}/health`)
-            .then(response => {
-              if (response.data.database === 'connected') {
-                console.log("Banco de dados reconectado!");
-                setOfflineMode(false);
-                setWallets([]);
-                fetchWallets(0);
-                fetchMasterTokens();
-              }
-            })
-            .catch(err => {
-              console.log("Banco de dados ainda indisponível:", err.message);
-            });
-        }, 10000);
-        return;
-      }
-
       console.log(`Buscando carteiras (página ${nextPage})`);
       const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/wallets`, {
         params: { page: nextPage, pageSize: 10 },
@@ -170,18 +144,22 @@ const WalletManager = () => {
     } catch (error) {
       console.error('Failed to fetch wallets:', error);
 
-      if (error.response?.status === 503 && !offlineMode) {
-        console.log("MongoDB unavailable - switching to offline mode");
-        setOfflineMode(true);
-        setError('Banco de dados indisponível. Usando modo offline com dados simulados.');
-        const mockWallets = generateMockData(10);
-        setWallets(mockWallets);
+      if (error.response?.status === 503) {
+        console.log("MongoDB unavailable - database connection error");
+        setError('Database unavailable. Please try again later when connection is restored.');
+        setWallets([]);
         setWalletStats({
-          totalWallets: mockWallets.length,
-          fromDatabase: false,
-          newlyCreated: mockWallets.length
+          totalWallets: 0,
+          fromDatabase: false
         });
         setHasMoreWallets(false);
+        setDbStatus('disconnected'); // Update DB status indicator
+        
+        // Try reconnecting after some time
+        setTimeout(() => {
+          console.log("Attempting to reconnect to database...");
+          fetchWallets(0);
+        }, 15000);
       } else if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
         console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
         setTimeout(() => fetchWallets(nextPage, retryCount + 1), 2000);
@@ -201,18 +179,6 @@ const WalletManager = () => {
     setIsLoadingData(true);
     try {
       setLoadingMoreTokens(nextPage > 0);
-
-      if (offlineMode) {
-        setTimeout(() => {
-          setMasterTokens([
-            { mint: "mocktoken1", balance: 10000, decimals: 9, symbol: "MOCK", name: "Mock Token (Offline Mode)" },
-            { mint: "mocktoken2", balance: 5000, decimals: 9, symbol: "TEST", name: "Test Token (Offline Mode)" }
-          ]);
-          setHasMoreTokens(false);
-          setLoadingMoreTokens(false);
-        }, 500);
-        return;
-      }
 
       console.log(`Buscando tokens para ${publicKey.toString()} (página ${nextPage})`);
       const response = await axios.get(
@@ -235,13 +201,9 @@ const WalletManager = () => {
     } catch (error) {
       console.error('Failed to fetch master tokens:', error);
 
-      if (error.response?.status === 503 && !offlineMode) {
-        console.log("MongoDB unavailable - switching to offline mode");
-        setOfflineMode(true);
-        setError('Banco de dados indisponível. Usando modo offline com dados simulados.');
-        setMasterTokens([
-          { mint: "mocktoken1", balance: 10000, decimals: 9, symbol: "MOCK", name: "Mock Token (Offline Mode)" }
-        ]);
+      if (error.response?.status === 503) {
+        setError('Database unavailable. Please try again later.');
+        setMasterTokens([]);
         setHasMoreTokens(false);
       } else if ((error.response?.status === 408 || error.response?.status === 504) && retryCount < 3) {
         console.log(`Timeout ocorreu, tentando novamente (${retryCount + 1}/3)...`);
@@ -315,6 +277,15 @@ const WalletManager = () => {
       });
       
       const { transactions, amountPerWallet, batches } = response.data;
+      
+      // Add this check to prevent the error
+      if (!transactions || !Array.isArray(transactions) || transactions.length === 0) {
+        setError('No valid transactions received from server. Please try again.');
+        setLoading(false);
+        setIsProcessing(false);
+        return;
+      }
+      
       let completedBatches = 0;
       const signatures = [];
       
@@ -891,6 +862,61 @@ const WalletManager = () => {
     }
   };
 
+  // Function to check database status - reduce frequency to avoid overwhelming the connection
+const checkDatabaseStatus = async () => {
+  setIsCheckingDb(true);
+  try {
+    const response = await axios.get(`${process.env.REACT_APP_API_URL}/health`, {
+      timeout: 5000
+    });
+    
+    const status = response.data.database === 'connected' ? 'connected' : 'disconnected';
+    setDbStatus(status);
+    
+    console.log(`Database status check: ${status}`);
+  } catch (error) {
+    console.error('Error checking database status:', error);
+    setDbStatus('disconnected');
+  } finally {
+    setIsCheckingDb(false);
+  }
+};
+
+// Function to attempt database reconnection - simpler logic
+const reconnectDatabase = async () => {
+  setIsCheckingDb(true);
+  setDbStatus('checking');
+  try {
+    await axios.get(`${process.env.REACT_APP_API_URL}/api/reconnect-db`, {
+      timeout: 8000
+    });
+    
+    // Wait a moment for reconnection to take effect
+    setTimeout(() => {
+      checkDatabaseStatus();
+      fetchWallets(0);
+    }, 2000);
+    
+  } catch (error) {
+    console.error('Error reconnecting to database:', error);
+    setDbStatus('disconnected');
+  } finally {
+    setIsCheckingDb(false);
+  }
+};
+
+// Modify the useEffect to check less frequently
+useEffect(() => {
+  checkDatabaseStatus();
+  
+  // Check every 60 seconds (reduced frequency)
+  const intervalId = setInterval(() => {
+    checkDatabaseStatus();
+  }, 60000);
+  
+  return () => clearInterval(intervalId);
+}, []);
+
   return (
     <ChaosPaper>
       {isLoadingData ? (
@@ -1151,6 +1177,73 @@ const WalletManager = () => {
                 </Typography>
               </Box>
             )}
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, mt: 2 }}>
+            {dbStatus === 'connected' && (
+              <Tooltip title="Database is online">
+                <Chip
+                  icon={<CheckCircleIcon />}
+                  label="Database Online"
+                  color="success"
+                  size="small"
+                  variant="outlined"
+                />
+              </Tooltip>
+            )}
+            {dbStatus === 'disconnected' && (
+              <Tooltip title="Database connection lost">
+                <Chip
+                  icon={<ErrorIcon />}
+                  label="Database Offline"
+                  color="error"
+                  size="small"
+                  variant="outlined"
+                />
+              </Tooltip>
+            )}
+            {dbStatus === 'checking' && (
+              <Tooltip title="Checking database connection...">
+                <Chip
+                  icon={<SyncIcon sx={{ animation: 'spin 1.5s linear infinite' }} />}
+                  label="Checking Connection"
+                  color="warning"
+                  size="small"
+                  variant="outlined"
+                />
+              </Tooltip>
+            )}
+            {dbStatus === 'unknown' && (
+              <Tooltip title="Database status unknown">
+                <Chip
+                  icon={<HelpOutlineIcon />}
+                  label="Status Unknown"
+                  color="default"
+                  size="small"
+                  variant="outlined"
+                />
+              </Tooltip>
+            )}
+            <Tooltip title={dbStatus === 'connected' ? 'Connection is active' : 'Attempt to reconnect'}>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={reconnectDatabase}
+                  disabled={isCheckingDb || dbStatus === 'connected'}
+                  sx={{ ml: 1 }}
+                >
+                  <RefreshIcon sx={isCheckingDb ? { animation: 'spin 1.5s linear infinite' } : {}} />
+                </IconButton>
+              </span>
+            </Tooltip>
+            
+            {/* Add keyframes for the spinning animation */}
+            <style jsx global>{`
+              @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+            `}</style>
           </Box>
 
           <Box sx={{ overflowX: 'auto' }}>
