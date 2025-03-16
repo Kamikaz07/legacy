@@ -866,42 +866,73 @@ const WalletManager = () => {
 const checkDatabaseStatus = async () => {
   setIsCheckingDb(true);
   try {
+    console.log("Checking database status...");
     const response = await axios.get(`${process.env.REACT_APP_API_URL}/health`, {
-      timeout: 5000
+      timeout: 8000
     });
     
     const status = response.data.database === 'connected' ? 'connected' : 'disconnected';
     setDbStatus(status);
     
-    console.log(`Database status check: ${status}`);
+    console.log(`Database status check: ${status}`, response.data);
+    
+    // If database is connected and we had an error, clear it
+    if (status === 'connected' && error && error.includes('Database unavailable')) {
+      setError(null);
+    }
+    
+    return status;
   } catch (error) {
     console.error('Error checking database status:', error);
     setDbStatus('disconnected');
+    return 'disconnected';
   } finally {
     setIsCheckingDb(false);
   }
 };
 
-// Function to attempt database reconnection - simpler logic
+// Function to attempt database reconnection with better feedback
 const reconnectDatabase = async () => {
   setIsCheckingDb(true);
   setDbStatus('checking');
+  setError(null); // Clear previous errors
+  setSuccessMessage('Attempting to reconnect to database...');
+  
   try {
-    await axios.get(`${process.env.REACT_APP_API_URL}/api/reconnect-db`, {
-      timeout: 8000
+    console.log("Sending reconnection request to server...");
+    const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/reconnect-db`, {
+      timeout: 12000 // Increase timeout for reconnection
     });
     
-    // Wait a moment for reconnection to take effect
-    setTimeout(() => {
-      checkDatabaseStatus();
-      fetchWallets(0);
-    }, 2000);
+    console.log('Database reconnection response:', response.data);
     
+    // Check connection status after reconnection attempt
+    const currentStatus = await checkDatabaseStatus();
+    
+    if (currentStatus === 'connected') {
+      setDbStatus('connected');
+      setSuccessMessage('Database connection restored successfully');
+      
+      // Refresh data
+      setTimeout(() => {
+        fetchWallets(0);
+        if (publicKey) {
+          fetchMasterTokens(0);
+        }
+      }, 1000);
+    } else {
+      setDbStatus('disconnected');
+      setError('Database reconnection failed. The connection attempt was made but the database is still unavailable.');
+    }
   } catch (error) {
     console.error('Error reconnecting to database:', error);
     setDbStatus('disconnected');
+    setError(`Database reconnection failed: ${error.response?.data?.error || error.message}`);
   } finally {
     setIsCheckingDb(false);
+    setTimeout(() => {
+      setSuccessMessage(null);
+    }, 3000);
   }
 };
 
