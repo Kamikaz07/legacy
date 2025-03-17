@@ -178,55 +178,33 @@ const WalletManager = () => {
       // Processar cada transação em sequência
       for (const txBase64 of transactions) {
         try {
-          // Converter base64 para Uint8Array
+          // Convert base64 to Uint8Array (browser-compatible approach)
           const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
-          const transaction = Transaction.from(txBytes);
+          const tx = Transaction.from(txBytes);
           
-          // Assinar a transação
-          setSuccessMessage(`Signing transaction ${completedBatches + 1}/${batches}...`);
-          const signedTx = await signTransaction(transaction);
+          // Get a fresh blockhash right before signing
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+          tx.recentBlockhash = blockhash;
+          tx.feePayer = publicKey;
           
-          // Enviar a transação
-          setSuccessMessage(`Sending transaction ${completedBatches + 1}/${batches}...`);
-          const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-            skipPreflight: false,
-            preflightCommitment: 'confirmed'
-          });
+          // Sign and send with the fresh blockhash
+          const signedTx = await signTransaction(tx);
+          const signature = await connection.sendRawTransaction(signedTx.serialize());
           
-          signatures.push(signature);
-          setSuccessMessage(`Waiting for confirmation of transaction ${completedBatches + 1}/${batches}...`);
-          
-          // Confirmar a transação usando a abordagem não depreciada
-          const latestBlockhash = await connection.getLatestBlockhash();
-          const confirmationResponse = await connection.confirmTransaction({
+          // Wait for confirmation with the updated block height
+          await connection.confirmTransaction({
             signature,
-            blockhash: latestBlockhash.blockhash,
-            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
+            blockhash,
+            lastValidBlockHeight
           });
-          
-          // Verificar se houve erros na confirmação
-          if (confirmationResponse.value.err) {
-            throw new Error(`Erro de confirmação: ${JSON.stringify(confirmationResponse.value.err)}`);
-          }
-          
-          // Verificar o status da transação após a confirmação
-          const status = await connection.getSignatureStatus(signature, {
-            searchTransactionHistory: true
-          });
-          
-          if (status.value && status.value.err) {
-            throw new Error(`Transação falhou: ${JSON.stringify(status.value.err)}`);
-          }
           
           completedBatches++;
-          const progress = Math.floor((completedBatches / batches) * 100);
+          const progress = Math.round((completedBatches / batches) * 100);
           setProgressValue(progress);
-          
-          // Atualizar o progresso
-          setSuccessMessage(`Progress: ${completedBatches}/${batches} batches completed (${progress}%)...`);
+          setSuccessMessage(`Processing: ${completedBatches}/${batches} batches complete (${progress}%)`);
         } catch (txError) {
-          console.error('Transaction error:', txError);
-          setError('Error processing transaction: ' + txError.message);
+          console.error("Transaction error:", txError);
+          setError(`Transaction failed: ${txError.message}`);
           break;
         }
       }
@@ -475,27 +453,30 @@ const WalletManager = () => {
           // Convert base64 to Uint8Array
           const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
           
-          // Send the transaction (since it's already pre-signed in the backend)
-          const signature = await connection.sendRawTransaction(txBytes);
-          
-          // Confirm the transaction
-          const latestBlockhash = await connection.getLatestBlockhash();
-          await connection.confirmTransaction({
-            signature,
-            blockhash: latestBlockhash.blockhash,
-            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
+          // IMPORTANT: Don't modify the pre-signed transaction at all, just send it directly
+          // This preserves the original signatures from the shadow wallets
+          const signature = await connection.sendRawTransaction(txBytes, {
+            skipPreflight: false,
+            preflightCommitment: 'confirmed'
           });
           
-          completedTransactions++;
-          const progress = Math.floor((completedTransactions / totalTransactions) * 100);
-          setProgressValue(progress);
+          // Wait for confirmation
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+          await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+          });
           
           // Update progress
-          setSuccessMessage(`Progress: ${completedTransactions}/${totalTransactions} transactions processed (${progress}%)...`);
+          completedTransactions++;
+          const progress = Math.round((completedTransactions / totalTransactions) * 100);
+          setProgressValue(progress);
+          setSuccessMessage(`Processed: ${completedTransactions}/${totalTransactions} (${progress}%)`);
         } catch (txError) {
-          console.error('Transaction error:', txError);
-          // Log error but continue with other transactions
-          console.log(`Error processing transaction ${index + 1}:`, txError);
+          console.error("Transaction error:", txError);
+          console.error(`Error processing transaction ${index + 1}:`, txError);
+          // Continue with next transaction
         }
       }
       
@@ -581,27 +562,30 @@ const WalletManager = () => {
           // Convert base64 to Uint8Array
           const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
           
-          // Send the transaction (since it's already pre-signed in the backend)
-          const signature = await connection.sendRawTransaction(txBytes);
-          
-          // Confirm the transaction
-          const latestBlockhash = await connection.getLatestBlockhash();
-          await connection.confirmTransaction({
-            signature,
-            blockhash: latestBlockhash.blockhash,
-            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
+          // IMPORTANT: Don't modify the pre-signed transaction at all, just send it directly
+          // This preserves the original signatures from the shadow wallets
+          const signature = await connection.sendRawTransaction(txBytes, {
+            skipPreflight: false,
+            preflightCommitment: 'confirmed'
           });
           
-          completedTransactions++;
-          const progress = Math.floor((completedTransactions / totalTransactions) * 100);
-          setProgressValue(progress);
+          // Wait for confirmation
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+          await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+          });
           
           // Update progress
-          setSuccessMessage(`Progress: ${completedTransactions}/${totalTransactions} transactions processed (${progress}%)...`);
+          completedTransactions++;
+          const progress = Math.round((completedTransactions / totalTransactions) * 100);
+          setProgressValue(progress);
+          setSuccessMessage(`Processed: ${completedTransactions}/${totalTransactions} (${progress}%)`);
         } catch (txError) {
-          console.error('Transaction error:', txError);
-          // Log error but continue with other transactions
-          console.log(`Error processing transaction ${index + 1}:`, txError);
+          console.error("Transaction error:", txError);
+          console.error(`Error processing transaction ${index + 1}:`, txError);
+          // Continue with next transaction
         }
       }
       
@@ -884,7 +868,7 @@ const WalletManager = () => {
         {/* Área para comprar tokens */}
         <Paper sx={{ p: 3, mb: 3, backgroundColor: 'rgba(0, 0, 0, 0.3)', borderRadius: 2 }}>
           <Typography variant="h6" gutterBottom sx={{ color: '#92E643' }}>
-            Buy/Sell Tokens
+            Send/Collect Tokens
           </Typography>
           
           <Box sx={{ mb: 2 }}>
@@ -973,7 +957,7 @@ const WalletManager = () => {
                 disabled={loading || wallets.length === 0 || !selectedToken || parseFloat(tokenPercentage) <= 0}
                 startIcon={loading && <CircularProgress size={20} />}
               >
-                Buy Tokens
+                Send Tokens
               </ActionButton>
               <ActionButton 
                 variant="contained" 
