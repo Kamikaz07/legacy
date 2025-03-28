@@ -19,9 +19,10 @@ import {
   InputLabel,
   FormControl,
   Paper,
+  Alert,
 } from "@mui/material";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { Connection, clusterApiUrl, Transaction } from "@solana/web3.js";
+import { Transaction, PublicKey, LAMPORTS_PER_SOL, SystemProgram } from "@solana/web3.js";
 import { useDropzone } from "react-dropzone";
 import axios from "axios";
 import InfoIcon from '@mui/icons-material/Info';
@@ -37,6 +38,7 @@ import LanguageIcon from '@mui/icons-material/Language';
 import TelegramIcon from '@mui/icons-material/Telegram';
 import { styled } from "@mui/material/styles";
 import StepConnector, { stepConnectorClasses } from '@mui/material/StepConnector';
+import { useNetwork } from "../context/NetworkContext";
 
 const steps = [
   "Basic Information",
@@ -144,7 +146,8 @@ const ChaosPaper = styled(Paper)(({ theme }) => ({
 }));
 
 const CoinCreator = () => {
-  const { connected, publicKey, signTransaction } = useWallet();
+  const { connected, publicKey, signTransaction, sendTransaction } = useWallet();
+  const { network, connection } = useNetwork();
   const [activeStep, setActiveStep] = useState(0);
   const [name, setName] = useState("test img");
   const [symbol, setSymbol] = useState("IMG");
@@ -164,14 +167,13 @@ const CoinCreator = () => {
   const [mintAddress, setMintAddress] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const [loading, setLoading] = useState(false);
-
+  const [tokenFee, setTokenFee] = useState(null);
+  
   const MAX_NAME_LENGTH = 18;
   const MAX_SYMBOL_LENGTH = 8;
   const MAX_DESCRIPTION_LENGTH = 500;
   const MAX_IMAGE_SIZE = 200 * 1024; // 200 KB
   const MAX_IMAGE_DIMENSIONS = 512; // 512x512 pixels
-
-  const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
 
   const base64ToUint8Array = (base64) => {
     const binaryString = atob(base64);
@@ -210,7 +212,30 @@ const CoinCreator = () => {
   });
 
   const handleNext = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep + 1);
+    const nextStep = activeStep + 1;
+    setActiveStep(nextStep);
+    
+    // Carregar o valor da taxa quando o usuário alcançar a tela de confirmação
+    if (nextStep === 4) {
+      fetchTokenFee();
+    }
+  };
+
+  // Função para buscar o valor da taxa do token antes da criação
+  const fetchTokenFee = async () => {
+    if (!connected || !publicKey) return;
+    
+    try {
+      const response = await axios.get(
+        `${process.env.REACT_APP_API_URL}/api/token-fee?network=${network}`
+      );
+      
+      if (response.data && response.data.fee) {
+        setTokenFee(response.data.fee);
+      }
+    } catch (error) {
+      console.error("Error fetching token fee:", error);
+    }
   };
 
   const handleBack = () => {
@@ -258,6 +283,7 @@ const CoinCreator = () => {
       formData.append("supply", supply);
       formData.append("tax", tax);
       formData.append("creatorPublicKey", publicKey.toBase58());
+      formData.append("network", network);
       formData.append("revokeMintAuthority", revokeMintAuthority);
       formData.append("revokeFreezeAuthority", revokeFreezeAuthority);
       formData.append("revokeUpdateAuthority", revokeUpdateAuthority);
@@ -285,8 +311,22 @@ const CoinCreator = () => {
       );
   
       if (response.status === 200) {
+        // Definir a taxa recebida na resposta
+        if (response.data.fee) {
+          setTokenFee(response.data.fee);
+        }
+        
         const transactionBytes = base64ToUint8Array(response.data.transaction);
         const transaction = Transaction.from(transactionBytes);
+        
+        // Verificar o saldo da carteira
+        const userBalance = await connection.getBalance(publicKey);
+        const feeInLamports = response.data.fee * LAMPORTS_PER_SOL;
+        
+        if (userBalance < feeInLamports + 5000) { // 5000 lamports para taxa de rede
+          throw new Error(`Insufficient balance. You need at least ${response.data.fee} SOL to create this token.`);
+        }
+        
         const signedTransaction = await signTransaction(transaction);
         const signature = await connection.sendRawTransaction(
           signedTransaction.serialize()
@@ -302,15 +342,15 @@ const CoinCreator = () => {
         );
         setMintAddress(response.data.mintPublicKey);
         setErrorMessage(null);
-        handleNext();
+        setActiveStep(steps.length);
       } else {
         setErrorMessage("Error creating token. Please try again.");
       }
     } catch (error) {
       console.error("Request error:", error);
       setErrorMessage(
-        error.response?.data?.error || 
-          "Error creating token. Please try again."
+        error.response?.data?.error || error.message || 
+        "Error creating token. Please try again."
       );
     } finally {
       setLoading(false);
@@ -319,6 +359,19 @@ const CoinCreator = () => {
 
   const renderActionButton = () => {
     if (activeStep === 3) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button 
+            variant="contained" 
+            onClick={handleNext} 
+            disabled={loading} 
+            sx={{ backgroundColor: '#92E643', color: '#000' }}
+          >
+            Next
+          </Button>
+        </Box>
+      );
+    } else if (activeStep === 4) {
       return (
         <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button 
@@ -628,7 +681,75 @@ const CoinCreator = () => {
             </Grid>
           </Grid>
         );
-      case 4:
+      case 4: // Confirmação (antigo passo 5)
+        return (
+          <Box sx={{ padding: 2, marginLeft: 4 }}>
+            <Typography variant="h6" sx={{ color: '#92E643', mb: 2 }}>
+              Review Token Details
+            </Typography>
+            
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <Card sx={{ backgroundColor: 'rgba(10, 10, 10, 0.7)', height: '100%' }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>Basic Information</Typography>
+                    <Typography><strong>Name:</strong> {name}</Typography>
+                    <Typography><strong>Symbol:</strong> {symbol}</Typography>
+                    <Typography><strong>Description:</strong> {description}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <Card sx={{ backgroundColor: 'rgba(10, 10, 10, 0.7)', height: '100%' }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>Technical Details</Typography>
+                    <Typography><strong>Decimals:</strong> {decimals}</Typography>
+                    <Typography><strong>Supply:</strong> {supply.toLocaleString()}</Typography>
+                    <Typography><strong>Network:</strong> {network}</Typography>
+                    <Typography><strong>Tax:</strong> {tax/100}%</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <Card sx={{ backgroundColor: 'rgba(10, 10, 10, 0.7)' }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>Security Settings</Typography>
+                    <Typography><strong>Mint Authority Revoked:</strong> {revokeMintAuthority ? "Yes" : "No"}</Typography>
+                    <Typography><strong>Freeze Authority Revoked:</strong> {revokeFreezeAuthority ? "Yes" : "No"}</Typography>
+                    <Typography><strong>Update Authority Revoked:</strong> {revokeUpdateAuthority ? "Yes" : "No"}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <Card sx={{ backgroundColor: 'rgba(10, 10, 10, 0.7)' }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>Payment</Typography>
+                    <Typography><strong>Creation Fee:</strong> {tokenFee || "Loading..."} SOL</Typography>
+                    <Typography variant="caption" color="textSecondary">
+                      This fee will be automatically deducted from your wallet when creating the token.
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <Card sx={{ backgroundColor: 'rgba(10, 10, 10, 0.7)' }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>Social Links</Typography>
+                    <Typography><strong>Website:</strong> {socialLinks.website || "None"}</Typography>
+                    <Typography><strong>Twitter:</strong> {socialLinks.twitter || "None"}</Typography>
+                    <Typography><strong>Telegram:</strong> {socialLinks.telegram || "None"}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Box>
+        );
+        
+      case 5: // Resultado final
         return (
           <Box sx={{ padding: 2, marginLeft: 4 }}>
             {mintAddress ? (
@@ -650,7 +771,7 @@ const CoinCreator = () => {
                 <Button
                   variant="contained"
                   sx={{ backgroundColor: '#92E643', color: '#000', mt: 2, mr: 2 }}
-                  href={`https://solscan.io/token/${mintAddress}?cluster=devnet`}
+                  href={`https://solscan.io/token/${mintAddress}${network !== 'mainnet-beta' ? `?cluster=${network}` : ''}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -659,7 +780,7 @@ const CoinCreator = () => {
                 <Button
                   variant="contained"
                   sx={{ backgroundColor: '#92E643', color: '#000', mt: 2 }}
-                  href={`https://explorer.solana.com/address/${mintAddress}?cluster=devnet`}
+                  href={`https://explorer.solana.com/address/${mintAddress}${network !== 'mainnet-beta' ? `?cluster=${network}` : ''}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -714,13 +835,52 @@ const CoinCreator = () => {
       </Stepper>
       <Box mt={2}>
         {activeStep === steps.length ? (
-          <Typography>Token created successfully!</Typography>
+          <Box sx={{ padding: 2, marginLeft: 4 }}>
+            {mintAddress ? (
+              <>
+                <Box display="flex" alignItems="center" gap={1}>
+                  <CheckCircleIcon sx={{ color: '#92E643', fontSize: 40 }} />
+                  <Typography variant="h6">Token created successfully!</Typography>
+                </Box>
+                <Typography sx={{ mt: 2 }}>Token Address: {mintAddress}</Typography>
+                <Button
+                  variant="contained"
+                  sx={{ backgroundColor: '#92E643', color: '#000', mt: 2, mr: 2 }}
+                  href={`https://raydium.io/liquidity/create-pool/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Create Liquidity Pool
+                </Button>
+                <Button
+                  variant="contained"
+                  sx={{ backgroundColor: '#92E643', color: '#000', mt: 2, mr: 2 }}
+                  href={`https://solscan.io/token/${mintAddress}${network !== 'mainnet-beta' ? `?cluster=${network}` : ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View on Solscan
+                </Button>
+                <Button
+                  variant="contained"
+                  sx={{ backgroundColor: '#92E643', color: '#000', mt: 2 }}
+                  href={`https://explorer.solana.com/address/${mintAddress}${network !== 'mainnet-beta' ? `?cluster=${network}` : ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View on Explorer
+                </Button>
+              </>
+            ) : (
+              <Typography>Error creating token. Please try again.</Typography>
+            )}
+          </Box>
         ) : (
           <>
             {getStepContent(activeStep)}
             <Box mt={2} sx={{ display: 'flex', justifyContent: 'space-between' }}>
               <Box>
-                {activeStep !== 0 && activeStep !== 4 && (
+                {activeStep !== 0 && activeStep !== 5 && (
                   <Button onClick={handleBack} sx={{ color: '#92E643' }}>
                     Back
                   </Button>

@@ -21,6 +21,7 @@
     "axios": "^1.8.3",
     "browserify-zlib": "^0.2.0",
     "crypto-browserify": "^3.12.1",
+    "date-fns": "^4.1.0",
     "dompurify": "^3.2.4",
     "express": "^4.21.2",
     "https-browserify": "^1.0.0",

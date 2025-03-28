@@ -21,11 +21,14 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import CoinCreator from './components/CoinCreator';
 import WalletManager from './components/WalletManager';
 import UserBalance from './components/UserBalance';
+import NetworkSelector from './components/NetworkSelector';
 import Mixer from './components/Mixer';
-import DashboardExtras from './components/DashboardExtras';
+import TradingDashboard from './components/TradingDashboard';
+import BotManager from './components/BotManager';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import './index.css';
+import { NetworkProvider } from './context/NetworkContext';
 
 // Tema personalizado
 const darkTheme = createTheme({
@@ -360,25 +363,27 @@ const Header = () => (
       </Box>
       
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-        <WalletMultiButton
-          className="wallet-button"
-          style={{
-            background: 'linear-gradient(45deg, rgba(146, 230, 67, 0.05) 30%, rgba(57, 255, 20, 0.05) 90%)',
-            backdropFilter: 'blur(10px)',
-            borderRadius: '4px',
-            padding: '12px 20px',
-            fontWeight: 'bold',
-            fontSize: '1rem',
-            letterSpacing: '1px',
-            color: '#92E643',
-            border: '1.5px solid #92E643',
-            transition: 'all 0.3s ease',
-            marginBottom: '10px',
-            width: '170px',
-            boxShadow: '0 0 10px rgba(146, 230, 67, 0.2)',
-            position: 'relative',
-          }}
-        />
+        <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+          <NetworkSelector />
+          <WalletMultiButton
+            className="wallet-button"
+            style={{
+              background: 'linear-gradient(45deg, rgba(146, 230, 67, 0.05) 30%, rgba(57, 255, 20, 0.05) 90%)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '4px',
+              padding: '12px 20px',
+              fontWeight: 'bold',
+              fontSize: '1rem',
+              letterSpacing: '1px',
+              color: '#92E643',
+              border: '1.5px solid #92E643',
+              transition: 'all 0.3s ease',
+              width: '170px',
+              boxShadow: '0 0 10px rgba(146, 230, 67, 0.2)',
+              position: 'relative',
+            }}
+          />
+        </Box>
         <UserBalance />
       </Box>
     </Box>
@@ -536,97 +541,101 @@ const Header = () => (
   }, []);
 
   return (
-    <ThemeProvider theme={darkTheme}>
-      <CssBaseline />
-      <Box
-        sx={{
-          minHeight: '100vh', 
-          display: 'flex',
-          flexDirection: 'column',
-          backgroundColor: 'transparent !important', // Force transparency
-          position: 'relative',
-        }}
-      >
-        <Header />
-        <Container maxWidth="lg" sx={{ flexGrow: 1, mb: 5 }}>
-          <Tabs
-            value={tab}
-            onChange={handleTabChange}
-            variant="scrollable"
-            scrollButtons="auto"
-            sx={{ 
-              mb: 5, 
-              mt: 2,
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
-              borderRadius: '4px',
-              padding: '6px',
-              boxShadow: 'inset 0 0 15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(146, 230, 67, 0.2)',
-              '& .MuiTabs-indicator': {
-                backgroundColor: '#92E643',
-                height: '3px',
-                borderRadius: '1.5px',
-                boxShadow: '0 0 10px #92E643',
-                transition: 'all 0.4s ease',
-              },
-              '& .MuiTab-root': {
-                margin: '0 4px',
-                minWidth: '100px',
-                transition: 'all 0.3s ease',
-                opacity: 0.7,
-                fontSize: '0.7rem',
-                padding: '8px 16px',
-                borderRadius: '3px',
-                border: '1px solid transparent',
-                '&:hover': {
-                  backgroundColor: 'rgba(146, 230, 67, 0.1)',
-                  transform: 'translateY(-2px)',
-                  opacity: 0.9,
-                  border: '1px solid rgba(146, 230, 67, 0.3)',
+    <NetworkProvider>
+      <ThemeProvider theme={darkTheme}>
+        <CssBaseline />
+        <Box
+          sx={{
+            minHeight: '100vh', 
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: 'transparent !important', // Force transparency
+            position: 'relative',
+          }}
+        >
+          <Header />
+          <Container maxWidth="lg" sx={{ flexGrow: 1, mb: 5 }}>
+            <Tabs
+              value={tab}
+              onChange={handleTabChange}
+              variant="scrollable"
+              scrollButtons="auto"
+              sx={{ 
+                mb: 5, 
+                mt: 2,
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                borderRadius: '4px',
+                padding: '6px',
+                boxShadow: 'inset 0 0 15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(146, 230, 67, 0.2)',
+                '& .MuiTabs-indicator': {
+                  backgroundColor: '#92E643',
+                  height: '3px',
+                  borderRadius: '1.5px',
+                  boxShadow: '0 0 10px #92E643',
+                  transition: 'all 0.4s ease',
                 },
-                '&.Mui-selected': {
-                  opacity: 1,
-                  backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                  border: '1px solid rgba(146, 230, 67, 0.5)',
-                  boxShadow: '0 0 15px rgba(146, 230, 67, 0.2)',
-                  animation: 'pulse 0.5s ease-out',
-                  color: '#92E643',
-                  fontWeight: 'bold',
-                  '&::before': {
-                    content: '">"',
-                    marginRight: '5px',
+                '& .MuiTab-root': {
+                  margin: '0 4px',
+                  minWidth: '100px',
+                  transition: 'all 0.3s ease',
+                  opacity: 0.7,
+                  fontSize: '0.7rem',
+                  padding: '8px 16px',
+                  borderRadius: '3px',
+                  border: '1px solid transparent',
+                  '&:hover': {
+                    backgroundColor: 'rgba(146, 230, 67, 0.1)',
+                    transform: 'translateY(-2px)',
+                    opacity: 0.9,
+                    border: '1px solid rgba(146, 230, 67, 0.3)',
+                  },
+                  '&.Mui-selected': {
+                    opacity: 1,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    border: '1px solid rgba(146, 230, 67, 0.5)',
+                    boxShadow: '0 0 15px rgba(146, 230, 67, 0.2)',
+                    animation: 'pulse 0.5s ease-out',
                     color: '#92E643',
+                    fontWeight: 'bold',
+                    '&::before': {
+                      content: '">"',
+                      marginRight: '5px',
+                      color: '#92E643',
+                    }
                   }
                 }
-              }
-            }}
-          >
-            <Tab label="Coin Creator" />
-            <Tab label="Wallet Manager" />
-            <Tab label="Mixer" />
-            <Tab label="Charts" />
-          </Tabs>
+              }}
+            >
+              <Tab label="Coin Creator" />
+              <Tab label="Wallet Manager" />
+              <Tab label="Bot Manager" />
+              <Tab label="Mixer" />
+              <Tab label="Charts" />
+            </Tabs>
 
-          <Card
-            className="cyberpunk-card cyberpunk-grid-bg"
-            sx={{
-              borderRadius: '10px',
-              p: 3,
-              width: '100%',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <Box sx={{ position: 'relative' }} className="tab-content" key={tab}>
-              {tab === 0 && <CoinCreator publicKey={publicKey} />}
-              {tab === 1 && <WalletManager />}
-              {tab === 2 && <Mixer />}
-              {tab === 4 && <DashboardExtras />}
-            </Box>
-          </Card>
-        </Container>
-        <Footer />
-      </Box>
-    </ThemeProvider>
+            <Card
+              className="cyberpunk-card cyberpunk-grid-bg"
+              sx={{
+                borderRadius: '10px',
+                p: 3,
+                width: '100%',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              <Box sx={{ position: 'relative' }} className="tab-content" key={tab}>
+                {tab === 0 && <CoinCreator publicKey={publicKey} />}
+                {tab === 1 && <WalletManager />}
+                {tab === 2 && <BotManager />}
+                {tab === 3 && <Mixer />}
+                {tab === 4 && <TradingDashboard />}
+              </Box>
+            </Card>
+          </Container>
+          <Footer />
+        </Box>
+      </ThemeProvider>
+    </NetworkProvider>
   );
 }
 
