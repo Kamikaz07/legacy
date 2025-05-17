@@ -26,6 +26,7 @@
     "express": "^4.21.2",
     "https-browserify": "^1.0.0",
     "path-browserify": "^1.0.1",
+    "prettier": "^3.5.3",
     "querystring-es3": "^0.2.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

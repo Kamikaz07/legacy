@@ -1,8 +1,10 @@
-import React from 'react';
-import { Button, Typography, Box, Paper } from '@mui/material';
-import { styled } from '@mui/system';
+import React from "react";
+import { Button, Typography, Box, Paper } from "@mui/material";
+import { styled } from "@mui/system";
 
-const ChaosPaper = styled(Paper)({ /* Same styling */ });
+const ChaosPaper = styled(Paper)({
+  /* Same styling */
+});
 
 const DashboardExtras = () => {
   return (
